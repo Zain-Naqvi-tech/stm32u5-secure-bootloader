@@ -1,0 +1,4 @@
+"./Core/Src/main.o"
+"./Core/Src/syscalls.o"
+"./Core/Src/sysmem.o"
+"./Startup/startup_stm32u585aiixq.o"
