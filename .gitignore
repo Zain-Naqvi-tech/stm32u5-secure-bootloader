@@ -53,3 +53,18 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# ─── CubeIDE / Eclipse build output ───
+Debug/
+Release/
+*.list
+*.cyclo
+
+# ─── Eclipse / CubeIDE workspace metadata ───
+.metadata/
+RemoteSystemsTempFiles/
+*.launch
+
+# ─── OS junk ───
+.DS_Store
+Thumbs.db
