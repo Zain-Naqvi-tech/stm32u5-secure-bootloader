@@ -19,13 +19,16 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "stm32u585xx.h"
+#include "PLL.h"
+#include "uart.h"
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
 #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
-void GPIO_Init(void) {
-	//init Port H for PH6 and PH7 which are onboard user LEDs
+void PortH_Init(void) {
+
+	//initialize Port H for PH6 and PH7 which are on-board user LEDs
 
 	//enable the peripheral clock
 	RCC->AHB2ENR1 |= 0x80; //set bit 7 of the register to enable the clock for port H
@@ -35,11 +38,14 @@ void GPIO_Init(void) {
 
 	GPIOH->MODER &= ~(3U << (7*2)); //Clear Pin 7
 	GPIOH->MODER |= (1U << (7*2)); //Pin 7: 01
+
 }
 
 int main(void)
 {
-	GPIO_Init();
+	PortH_Init();
+	PLL_Init();
+	USART_Init();
 
 	while (1) {
 		//set bits 22 and 23 (reset bits) in order to turn ON the LEDs
