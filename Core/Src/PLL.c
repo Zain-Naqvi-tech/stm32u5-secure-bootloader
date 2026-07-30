@@ -12,14 +12,37 @@ void PLL_Init(void) {
 	//Set the PLL to integer mode by Clearing PLL1FRACEN in RCC_PLL1CFGR. Bit 4
 	RCC->PLL1CFGR &= ~(1U << 4);
 
+	//generate a booster clock frequency of 16MHz
+	RCC->PLL1CFGR &= ~(0xFU << 12);
+
+	//switch on PLL1 oscillator clock source
 	//enable HSI Clock (Bit 8 for HSI16)
 	RCC->CR |= (1U << 8);
 
 	while (!(RCC->CR & (1U << 10))) {}
 
-	//choose HSI16 clock as the PLL1 entry clock source. Bit 1
+	//after the source is ON, choose HSI16 clock as the PLL1 entry clock source. Bit 1
 	RCC->PLL1CFGR &= ~(3U << 0);
 	RCC->PLL1CFGR |= (1U << 1);
+
+	//range P
+	PWR->VOSR &= ~(3U << 16);
+	PWR->VOSR |= (3U << 16); //range 1 (highest frequency)
+
+	//wait for the VOSRDY flag
+	while (!(PWR->VOSR & (1U << 15))) {}
+
+	//set BOOSTEN (epod booster enable)
+	PWR->VOSR |= (1U << 18);
+
+	//wait for the boostrdy flag to be set
+	while (!(PWR->VOSR & (1U << 14))) {}
+
+	//set latency bits to 0000 for Wait State 1 at 160MHz of HCLK
+	FLASH->ACR &= ~(0xFFU << 0);
+
+	//WSC bits to 0
+	RAMCFG_M1->CR &= ~RAMCFG_CR_WSC;
 
 	//init pre-divider to be div=1 - Bits 11:8 - 0000 (PLLM)
 	RCC->PLL1CFGR &= ~(0xFU << 8); //clear all 4 bits to make it 0000 for div=1
