@@ -21,6 +21,7 @@ void USART_Init(void) {
 	GPIOA->MODER |= (2U << (10*2));
 
 	//Set the alternate function AF7 setting for Pins 9 and 10 using the AFRH register (Pins 8 to 15)
+	GPIOA->AFR[1] &= ~(7U << ());
 	GPIOA->AFR[1] |= 0x00000770;
 
 	//enable the clock for USART1
