@@ -31,8 +31,33 @@ void USART_Init(void) {
 	RCC->CCIPR1 |= (1U << 0); //choose the SYSCLK currently running at 160MHz using PLL as the kernel clock source for USART1
 
 	//enable the clock for USART1
-	RCC->APB2ENR |= (1U << RCC_APB2ENR_USART1EN);  //set bit 14 of the APB2ENR Register in order to enable the clock for USART1
+	RCC->APB2ENR |= (1U << 14);  //set bit 14 of the APB2ENR Register in order to enable the clock for USART1
 
+	//add a delay to allow the clock to be enabled
+	volatile uint32_t delay;
+	delay = RCC->APB2ENR;
 
+	//baud rate (115200)
+	USART1->CR1 &= ~(1U << 15); //oversampling by 16
+	USART1->BRR = 1389U; //USARTDIV=1389
+
+	//configure stop bits (1)
+	USART1->CR2 &= ~(3U << 12); //clear bits 12 and 13 to set ONE stop bit for the USART
+
+	//configure word length (8 bits) - 1 start bit, 8 Data bits, n stop bits
+	USART1->CR1 &= ~(1U << 28);
+	USART1->CR1 &= ~(1U << 12);
+
+	//no parity
+	USART1->CR1 &= ~(1U << 10); //clear bit 10, which means parity control disabled
+
+	//enable TX
+	USART1->CR1 |= (1U << 3); //set bit 3 for transmitter enable
+
+	//enable RX
+	USART1->CR1 |= (1U << 2); //set bit 2 for receiver enable
+
+	//enable peripheral
+	USART1->CR1 |= (1U << 0); //USART enabled
 
 }
