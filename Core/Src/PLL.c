@@ -38,8 +38,9 @@ void PLL_Init(void) {
 	//wait for the boostrdy flag to be set
 	while (!(PWR->VOSR & (1U << 14))) {}
 
-	//set latency bits to 0000 for Wait State 1 at 160MHz of HCLK
-	FLASH->ACR &= ~(0xFFU << 0);
+	//set latency bits to 0100 for 4 wait states at 160MHz of HCLK
+	FLASH->ACR &= ~(0xFU << 0);
+	FLASH->ACR |= (0x4 << 0);
 
 	//WSC bits to 0
 	RAMCFG_M1->CR &= ~RAMCFG_CR_WSC;
@@ -76,5 +77,12 @@ void PLL_Init(void) {
 
 	//busy-wait
 	while (!(RCC->CR & (1U << 25))) {}
+
+	//System Clock switch to PLL pll1_r_ck using the RCC_CFGR1 Register (clock configuration register)
+	RCC->CFGR1 &= ~(0x3U << 0);
+	RCC->CFGR1 |= (0x3U << 0);
+
+	//wait until the hardware sets the SWS bits of the clock configuration register
+	while ((RCC->CFGR1 & (0x3U << 2)) != (0x3U << 2)) {}
 
 }
