@@ -45,19 +45,25 @@ int main(void)
 {
 	PortH_Init();
 	PLL_Init();
-	USART_Init();
+	USART1_Init();
+
+	const char string[] = "bruh Successful Initializations\n";
+
+	for (volatile int i = 0; i < 5; i++) {
+		USART1_WriteString(string);
+	}
 
 	while (1) {
 		//set bits 22 and 23 (reset bits) in order to turn ON the LEDs
 		GPIOH->BSRR = 0x00C00000;
 
 		//loop for delay - make sure it doesnt get optimized by using volatile
-		for (volatile int i = 0; i < 100000; i++) {}
+		for (volatile int i = 0; i < 10000000; i++) {}
 
 		//set bits 6 and 7 (set bits) in order to turn OFF the LEDs
 		GPIOH->BSRR = 0x000000C0;
 
-		for (volatile int i = 0; i < 100000; i++) {}
+		for (volatile int i = 0; i < 10000000; i++) {}
 
 	}
 

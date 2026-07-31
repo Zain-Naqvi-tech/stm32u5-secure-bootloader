@@ -7,6 +7,8 @@
 
 #include "uart.h"
 
+#include <stdint.h>
+
 void USART1_Init(void) {
 
 	//initialize Port A
@@ -69,10 +71,15 @@ void USART1_WriteChar(const char character) {
 
 }
 
-void USART1_WriteString(const char string[]) {
+void USART1_WriteString(const char *string) {
 
-	for (int i = 0; string[i] != '\0'; i++) { //looping until we reach the termination character
-		USART1_WriteChar(string[i]);
+	while (*string != '\0') {
+		if (*string == '\n') {
+			USART1_WriteChar('\r');
+		}
+
+		USART1_WriteChar(*string);
+		string++;
 	}
 
 }

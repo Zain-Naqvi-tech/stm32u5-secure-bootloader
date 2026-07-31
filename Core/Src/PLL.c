@@ -1,9 +1,14 @@
 /*
- * PLL.c
- *
- *  Created on: Jul 28, 2026
- *      Author: zainn
- */
+
+
+PLL.c
+
+Created on: Jul 28, 2026
+
+ Author: zainn
+
+
+*/
 
 #include "PLL.h"
 
@@ -25,6 +30,10 @@ void PLL_Init(void) {
 	RCC->PLL1CFGR &= ~(3U << 0);
 	RCC->PLL1CFGR |= (1U << 1);
 
+	RCC->AHB3ENR |= (1U << 2); //set bit 2 to enable PWR Clock
+
+	PWR->DBPR |= (1U << 0); //write access enabled to backup domain
+
 	//range P
 	PWR->VOSR &= ~(3U << 16);
 	PWR->VOSR |= (3U << 16); //range 1 (highest frequency)
@@ -43,7 +52,7 @@ void PLL_Init(void) {
 	FLASH->ACR |= (0x4 << 0);
 
 	//WSC bits to 0
-	RAMCFG_M1->CR &= ~RAMCFG_CR_WSC;
+	RAMCFG_SRAM1->CR &= ~RAMCFG_CR_WSC;
 
 	//init pre-divider to be div=1 - Bits 11:8 - 0000 (PLLM)
 	RCC->PLL1CFGR &= ~(0xFU << 8); //clear all 4 bits to make it 0000 for div=1
