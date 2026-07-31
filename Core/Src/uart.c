@@ -7,7 +7,7 @@
 
 #include "uart.h"
 
-void USART_Init(void) {
+void USART1_Init(void) {
 
 	//initialize Port A
 	RCC->AHB2ENR1 |= 0x01; //set bit 0 of the register to enable the clock for port A
@@ -61,3 +61,19 @@ void USART_Init(void) {
 	USART1->CR1 |= (1U << 0); //USART enabled
 
 }
+
+void USART1_WriteChar(const char character) {
+
+	while (!(USART1->ISR & (1U << 7))) {} //while FIFO is not full, keep looping
+	USART1->TDR = character; //write the char into the TDR bits [8:0] for transmission
+
+}
+
+void USART1_WriteString(const char string[]) {
+
+	for (int i = 0; string[i] != '\0'; i++) { //looping until we reach the termination character
+		USART1_WriteChar(string[i]);
+	}
+
+}
+
