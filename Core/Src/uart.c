@@ -8,6 +8,9 @@
 #include "uart.h"
 
 #include <stdint.h>
+#include <stdio.h>
+
+char buffer[128]; //capable of storing 128 chars (more than enough for our case)
 
 void USART1_Init(void) {
 
@@ -84,3 +87,44 @@ void USART1_WriteString(const char *string) {
 
 }
 
+void int_to_str(int n, char str[]) {
+
+	int i;
+	int temp_n;
+	int count;
+
+	if (n == 0) {
+		str[0] = '0';
+		str[1] = '\0';
+	}
+
+	if (n < 0) {
+
+	}
+
+	i = 0;
+	temp_n = n;
+	count = 0;
+	while (temp_n > 0) {
+		str[i++] = (temp_n % 10) + '0'; //extracts the first digit from the right and keeps moving to the left
+		temp_n /= 10;
+		count++;
+	}
+
+	//reverse the string in order to keep the original number intact
+	int start, end;
+	start = 0;
+	end = count - 1;
+	int temp;
+
+	while (start < end ) {
+		temp = str[start];
+		str[start] = str[end];
+		str[end] = temp;
+		start++;
+		end--;
+	}
+
+	str[count] = '\0';
+
+}

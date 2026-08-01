@@ -47,13 +47,18 @@ int main(void)
 	PLL_Init();
 	USART1_Init();
 
-	const char string[] = "bruh Successful Initializations\n";
+	const char string[] = "Successful Initializations\n";
+	char integer_string[5];
+	int n = 565;
 
-	for (volatile int i = 0; i < 5; i++) {
-		USART1_WriteString(string);
-	}
+	int_to_str(n, integer_string);
+
+	USART1_WriteString(integer_string);
 
 	while (1) {
+
+		//USART1_WriteString(string);
+
 		//set bits 22 and 23 (reset bits) in order to turn ON the LEDs
 		GPIOH->BSRR = 0x00C00000;
 
