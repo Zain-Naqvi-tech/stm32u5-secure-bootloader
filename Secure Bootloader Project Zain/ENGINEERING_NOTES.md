@@ -1,0 +1,425 @@
+# Project 4: Secure Bootloader
+
+_July 26, 2026, 8:02 PM_
+
+## Let's start off with the bootloader project
+
+Using:
+- https://www.st.com/en/evaluation-tools/b-u585i-iot02a.html
+- https://os.mbed.com/platforms/ST-Discovery-B-U585I-IOT02A/
+
+Datasheet for the STM32U585:
+- https://www.st.com/resource/en/datasheet/stm32u585ai.pdf
+
+Reference Manual:
+- https://www.st.com/resource/en/reference_manual/rm0456-stm32u5-series-armbased-32bit-mcus-stmicroelectronics.pdf
+
+User Manual:
+- https://www.st.com/resource/en/user_manual/um2839-discovery-kit-for-iot-node-with-stm32u5-series-stmicroelectronics.pdf
+
+![Circuit Diagram of the STM32U585AI](image.png)
+
+**MCU: STM32U585AI**
+
+### Summary
+
+Two independent security mechanisms that share a binary, plus an attack on our own work.
+
+- Verified boot: answers the question, should I execute this image at all? We hash the app, check signature against a public key WE trust, and either jump or stop. After the jump, this mechanism is done.
+- TrustZone-M: answers a different question for an entire runtime. NOW that trusted code is running, what is it allowed to touch? The hardware must be able to block non-secure apps from READING the key region at the bus level.
+
+---
+
+## Phase 0: Figure out how the system works
+
+Get familiar with CubeIDE and the device I have. Blink an LED on it.
+
+Where to plug in: CN8. This is the one we flash and debug from. Researched about the three plugins and this is the only one which allows us to do the natural flash/uart/debug out of the three.
+
+CN8 goes straight to the ST-LINK debug chip which is somewhat a different mcu than the STM32U585 which we are using.
+
+### GPIO on STM32 vs MSP
+
+Ok so im used to the ONE-BIT system on msp. For stm32, we have a TWO-BIT system where each pin gets 2 bits (MODEy[1:0]).
+
+- Pin 0 uses 0 and 1
+- Pin 1 uses 2 and 3
+- Pin 5 uses 10 and 11
+
+In order to use these GPIOH_MODER things, we need to import the CMSIS header file like before.
+
+### Let's do an LED run
+
+LD6 and LD7 are PH6 and PH7 GPIO respectively.
+
+1. Peripheral clock enable register 1 has a GPIOH enable bit (Bit 7).
+
+Types of registers in this are different to what we're used to with the msp:
+- Direction: GPIOx_MODER register (GPIO Port Mode Register)
+- Push-pull vs open-drain: GPIOx_OTYPER
+- Speed: GPIOx_OSPEEDR
+- Internal pull-up/down: GPIOxPUPDR
+
+Direction: 01 is the GP output Mode on the MODER register.
+
+Doing it like this:
+
+```c
+GPIOH->MODER &= ~(3U << (PIN * 2));
+GPIOH->MODER |= (1U << (PIN * 2));
+```
+
+We clear the two bits IN the pin first, then set it as 01 for output direction.
+
+```c
+REG &= ~(FIELD_MASK << (index * FIELD_WIDTH)); // clear
+REG |= (VALUE << (index * FIELD_WIDTH));        // set
+```
+
+- FIELD_MASK: 4-bit means 0xF and 2-bit means 0x3 (2^width - 1)
+- Index: Position of the field WITHIN the register
+- FIELD_WIDTH: 4 or 2 or 1 or however much the width is
+- Value: Value u need to write into it. Like for AF7, we need to write in 7 so we use 7U
+
+The LEDs turn on when driven LOW and turn off when driven HIGH.
+
+### GPIOx_ODR vs GPIOx_BSRR
+
+- ODR: Output Data Register. This is a read/write register that stores the actual data to be output on the corresponding GPIO pins.
+- BSRR (Bit Set/Reset Register): This is a 32-bit register designed to let you safely change individual bits in the ODR in a single one-shot operation without risking changing other pins.
+  - Bits 0-15 (Bit Set): Writing a 1 to these lower bits forces the corresponding ODR bit to 1 HIGH.
+  - Bits 16-31 (Bit Reset): Writing a 1 to these upper bits forces the ODR bit to 0 LOW.
+
+So, to turn ON the LED, we write a 1 to the reset bits (BR6 and BR7) in the BSRR register. Note: Reset bits are in the upper half (16-31) so remember that bit 6 is now bit 22 and bit 7 is bit 23.
+
+Ok so the LEDs blink and WE ARE GOOD TO GO.
+
+I am now more familiar with this new device and its things, so let's get to reading.
+
+---
+
+## Let's do some UART now
+
+USART: supports both synchronous and asynchronous modes. Uses a CLOCK.
+
+- We have 3 of these in our MCU, so let's use them. USART1/2/3.
+- Bit 14 of the RCC APB2 peripheral clock enable register (RCC_APB2ENR) needs to be set for clock enable.
+- USART1_TX: PA9
+- USART1_RX: PA10
+- AF7 for both (alternate function)
+
+So for the setting of AF7 PIN 9 and 10, we need to use the GPIO alternate function HIGH register called GPIOx_AFHL (pin 15 to 8). This includes AFSEL for pins 0 to 7.
+
+- So every AFSEL has 4 bits. We need AF7 which is 0111.
+- GPIOx->AFR[0] is low and AFR[1] is high.
+- So we can write 0x00000770 to index 1 and it should be good (use |= ofc).
+
+---
+
+## PLL Setup
+
+So /Core/Inc will include all the headers. Let's make a PLL one which just has a PLL init function.
+
+My decision for 160MHz: boot time is small and power constraints would not matter as much for this time period. We can maximize our frequency.
+
+Ok so, for a clock to actually function and register, there are THREE important factors:
+
+- Power: What VCORE range do I need for this target frequency? DO I need a power booster?
+- Memory (Flash): How many wait states does the flash memory need to safely execute code at this speed?
+- Clock: how do I configure the clock source and PLL dividers to synthesize this exact speed?
+
+The RCC has the main PLL called PLL1.
+
+The PLLs are controlled via RCC_PLLxDIVR, RCC_PLLxFRACR, RCC_PLLxCFGR, and RCC_CR (x = 1, 2, 3). (pasted from RM pg. 493)
+
+- Reduce power consumption -> configure VCOx output to the lowest frequency. VCO = voltage controlled oscillator.
+- Input frequency = 4 to 16MHz (Frefx_ck)
+- PLLxN loop divider works to give the expected frequency at VCO output.
+- PLLxFRACEN is 0 -> integer mode.
+- Enabled with PLLxON=1 in RCC_CR.
+
+> The following PLL parameters cannot be changed once the PLL is enabled: PLLxN, PLLxRGE, PLLxP, PLLxQ, and PLLxR. To ensure an optimal behavior of the PLL when one of the post-dividers (PLLxP, PLLxQ, or PLLxR) is not used, the application must clear the enable bit (PLLxPEN, PLLxQEN, PLLxREN), and configure the corresponding post-dividers to their minimum value (PLLxR = 0, PLLxP = 0, or PLLxQ = 0). If the above rules are not respected, the PLL output frequency is not guaranteed. (RM pg. 494)
+
+Integer mode, VCO frequency:
+- Fvcox = Frefx_ck * PLLxN
+- 320 = 16 * 20, PLLN=20, ref=16, fvco=320 (MHz)
+
+So for this, we obv need to choose a number from the range of 128-544MHz for the VCO frequency.
+
+A rule is: maximize the VCO frequency to MINIMIZE the PLL jitter, while choosing a value that is an EXACT multiple of the target output frequency (160MHz).
+
+Initialization Phase:
+- Initialize the PLLs registers according to the required frequency.
+- Set PLLxFRACEN to 0 in RCC_PLL1CFGR.
+- PLLxON=1, wait until PLLxRDY=1 (busy wait loop).
+
+Flow as shown in the RM:
+
+![PLL enable sequence, integer mode (from the RM)](image-1.png)
+
+- 0x000000100
+- We need to use HSI16 clock for PLL1 entry clock source (to match the 16MHz we decided earlier).
+- PLL1P: Main System Clock. Route this.
+- Ok so im having a bit of a hiccup so ill watch a yt vid: just not sure about the calculations so it's good to have a second look.
+
+![Clock sources in the MCU (Fastbit Embedded Brain Academy)](image-2.png)
+
+- Ok so this person targets a 168MHz clock OUTPUT.
+- VCO boosts the frequency.
+- Ok yeah this makes a lot more sense. Let's do the calcs again and see.
+
+Redo the calcs:
+- We don't need PLLQ for sure.
+- We want SysClk to be 160MHz.
+- We are using HSI for sure. Our VCO has a range of 128-544MHz.
+- The input frequency range to VCO is 4-16MHz. So we can divide HSI by one and keep the VCO input the same as 16MHz.
+- So PLLM=1.
+- 16*20=320 which divided by 2 makes 160 which is what I want.
+- Fref = 16MHz. VCO output is 320MHz. Sysclk is now 160MHz. PLLP is 2.
+
+![Figure 38. Clock tree for STM32U5 series](image-3.png)
+
+- Ok so I just figured out from this diagram that only the pll1_r_ck goes to the system clock. So all we need to do is swap the things we did for P with R and we good.
+
+### Power for the 160MHz output
+
+Next step for PLL is working with power. We need enough power for the 160MHz output to function properly.
+
+Dynamic Voltage Scaling Management:
+- Increasing/decreasing voltage used for Vcore according to the application performance and power consumption needs.
+- Dynamic voltage scaling to increase Vcore is overvolting, opposite is undervolting which is used to save power in stuff like phones and laptops.
+- We need Range 1L high output voltage at 1.2V. Used when the sysclk f is upto 160MHz which it is for us.
+- Section 10.5.4 page 410 has a map for setting this voltage. Let's get to the flow. I will code using the flow, then check back in with the flow and notes on what happened during the process.
+
+Notes for the voltage scaling settings:
+- PLL1MBOOST is the prescalar for EPOD booster input clock. Configures the prescalar of the PLL1, used for the EPOD booster. The EPOD booster input frequency is: PLL1 input clock frequency / PLL1MBOOST.
+- Important note on the BOOST stuff: it can only be written when the PLL1 is disabled (PLL1ON=0 and PLL1RDY=0).
+- We need to do PLL1MBOOST=0000 because we need 16MHz/1 = 16MHz.
+- In order to clear those bits, we first need to make sure that the PLL1 is disabled and the EPODBoost mode is disabled in the PWR_VOSR (power voltage scaling register).
+- Just learned something new: In order to use a clock source, one must TURN IT ON before selecting it for the PLL.
+
+### Wait States
+
+Ok just got stuck on Wait States:
+- The reason we need wait states is because at times memory cant return data in one cycle. We need wait states to transfer it in the next data cycle.
+- The number of wait states is related to the HCLK frequency and the flash's extra time.
+- So we need to find a value which says that for this voltage range, for this HCLK band, use this many wait states.
+- Found the table, so we need 0 wait states.
+
+Ok while programming, I came across a better difference definition for Flash memory and SRAM:
+- Flash Memory: non-volatile. Uses floating-gate transistors which are physically slower to read. At 160MHz, a CPU cycle is only 6.25ns which requires a 4-wait-state pause (from table 54. on chapter 7.3.3 page 295 of the RM).
+- SRAM: volatile and integrated on the high-speed CPU bus matrix. Incredibly fast and operates at true CPU core speed. Therefore, it needs 0 wait states.
+
+### Switch the system clock
+
+- Now all that is left is switching the system clock to the PLL r.
+- This can be done from the RCC_CFGR1 register.
+- DONEEEEE
+
+---
+
+## USART programming
+
+Now we need to program the usart for our specific message delivery use.
+- Set the Baud Rate.
+- Configure Stop bits.
+- Configure Word Length (we can make it 8 bits and one stop bit).
+- Enable the Peripheral AND the RX TX enable and Parity.
+
+Baud Rate:
+- Equation: Baud Rate = usart_ker_ck_pres / USARTDIV
+- In the reset state where the USART's internal clock prescaler register is set to divide-by-1: usart_ker_ck_pres = System Clock Frequency.
+
+Basic Steps I did:
+1. Enable USART Clock.
+2. Enable GPIO Port A Clock.
+3. Make Port A Pins to AF mode using the MODER register.
+4. Set the AFR Register indices to the required Afn number.
+
+---
+
+## Phase 1: Memory Map
+ 
+Readings: FLASH memory from the RM (pg 291), Embedded Flash Memory from the Datasheet, Bank Boundary, Programming Granularity, and Write Alignment all from the RM.
+ 
+### Flash memory notes (from Phase 1 reading)
+ 
+- Flash Memory: non-volatile computer storage chip which can be electrically erased and reprogrammed in blocks.
+- 4Mbytes of flash memory POSSIBLE but in our case we have 2MB of space (1MB per bank).
+
+![Table 52. Flash module 2-Mbyte dual-bank organization for STM32U575/585](image-4.png)
+ 
+- To find how much space a page takes up, do 'end address - start address' + 1 (to include the 0th byte).
+- This diagram explains that flash area has a Main memory, Bank 1, Bank 2, Non-secure info block, and a Secure info block.
+- Flash erases a whole page at a time. We cannot erase specific parts of a page.
+- MAIN FEATURES OF THE MEMORY:
+  - Has a main memory (2MB) and two information blocks.
+  - Bank 1: 128 pages, 8KB per page.
+  - Bank 2: 128 pages, 8KB per page.
+  - That means Bank 1 = Bank 2 = 128 pages * 8KB = 1MB per bank.
+- Our read access latency is 5 CPU cycles (time taken to correctly read data from flash memory).
+- So this can definitely work as a foundation for the A/B banks sections.
+- So one firmware copy per bank, updating the inactive one while the active one runs. Then swap.
+- Embedded Flash Memory: built directly into the MCU, different from standard flash. Our standard flash is 64MB (just saw the chip on the board). So it turns out we have 2MB of the fast internal flash memory coming from the mcu.
+- Ok so it says we cannot read/write/erase the flash main memory during debug/boot from RAM/bootloader.
+- Just learned one thing: our mcu has a flash memory of 2MB. So the 4MB number earlier is the MAX the stm32 family can hold in that case. Our mcu has 2MB.
+- Bank 1 Boundary: 0x0800 0000 to 0x080F FFFF.
+- Bank 2 Boundary: 0x0810 0000 to 0x081F FFFF.
+- Sequences:
+  - Flash memory is programmed at 137 bits at a time (128-bit data + 9 bits ECC).
+  - Only possible to write quad-word (4x32 bit data).
+  - Flash Memory programming sequence is given on page 300 of the RM.
+  - 8 quad-words: Flash Burst Programming.
+- Each memory page can be written and erased 10,000 or 100,000 times.
+### A/B Scheme with bootloaders
+ 
+- Uses two separate storage slots, slot A and B, to enable seamless and safe system updates. Such as active/inactive slot switching.
+- Background updates.
+- Automatic rollback.
+### Bootloader theory (interrupt.memfault.com article)
+ 
+Source: https://interrupt.memfault.com/blog/how-to-write-a-bootloader-from-scratch
+ 
+- Need a bootloader to load the software.
+- Look at the other two articles LINKED with this article as well which explain linker scripts and startup file to bootstrap the C environment.
+- It lives in the Flash Memory.
+- So we need to decide on how much space we want to dedicate to our bootloader.
+- Flash sector size is important. We want to be able to erase app sectors without erasing bootloader data or vice versa. So, the bootloader must end on a flash sector boundary. This means that it would make use of the PAGES in flash memory as they are independently erased.
+- Now, the next thing has to do with the Bank 1/2 split. We use a few pages in either bank for the bootloader. For the application slots, we can use the leftover pages from one bank (after the bootloader takes some space) and for the second bank, we can use the SAME leftover AMOUNT of memory. The same size, not the same memory. The leftover space can be used for other information.
+- This 'other information' is the bootflags, update-in-progress states, version numbers, anti-rollback counters, etc.
+- Then we transcribe the memory map into a linker script (we'll learn about it when writing the script).
+- We need a valid stack pointer at 0x0 and a valid Reset_Handler function setting up our env at address 0x4.
+### Boot process
+ 
+Now looking at the first referenced article about the BOOT process. In short, a chip must do the following:
+- Reset the vector table address to 0x00000000.
+- Disable interrupts.
+- Load the SP from address 0x00000000.
+- Load the PC from address 0x00000004.
+So, the main goal we have is to write a Reset_Handler which boots us to main (application). It is also responsible for initializing static and global variables and STARTING the program.
+ 
+- All objects with static duration shall be initialized before program startup.
+- Look at their Reset_Handler Code for better understanding (refer to it when writing the script and handler).
+### Placing the bootloader
+ 
+- So we need the bootloader to be the FIRST thing the CPU touches. We have decided how the banks and their memories are split, but their locations are still blurry. One thing Im thinking of is that if the bootloader needs to be first, then the bootloader must be placed at the START of Bank 1. So it is the first address.
+- After researching more, I just learned that the STARTING location is not just by LAW the start of bank 1. They used the BOOT0 Pin, nBOOT0/nSWBOOT0 option bits, and specific boot address registers. Bank 1 physically maps to 0x0800 0000 (non-secure, aka trustzone is disabled). But this is the DEFAULT way the mcu is programmed. It is by default programmed to start at the start of bank 1.
+- So the flow for this right now is: cpu wakes up, reads the initial stack pointer (SP) from the first 4 bytes of Bank 1, reads its Reset Vector from the next 4 bytes, and begins executing instructions right there.
+### TrustZone considerations
+ 
+Based on our initial plan, we will add the trustzone layer AFTER a successful secure verified boot bootloader has been built. So we start adding it in around phase 3. BUT, we need to keep trustzone in our minds when making the memory maps or planning some things out, even if we keep TZEN=0.
+ 
+Secure vs non-secure alias:
+- Secure (S): used for trusted execution, secure storage, and transition gates. Only available with trustzone.
+- Non-secure (NS) alias: used for standard public execution and data storage. Used when TZEN=0. Remember that we cant access secure when TZEN=0 (it will result in hardfault).
+- So let's make a memory map for the system and leave space for the TZEN=1 case (in both flash and ram).
+### Memory Map design
+ 
+- So we need the Flash and SRAM memory blocks for the bootloader.
+- We already discussed the way im going to split up the bootloader space and Bank space, but now I need to figure out how the whole secure/non-secure memory is split.
+- This makes more sense now that ive read those articles and did some more research on size allocations.
+- We are allocating 32KB for the bootloader (4 pages) which is a safe starting point, as we might need less or more depending on the code. We write the code, CHECK the size it takes, then resize our memory map based on that. So we always start with a safe guess.
+- The trustzone confusion we're facing right now can be resolved by just adding a little note to whether this ALLOCATED space will be secure or non-secure in the future when TrustZone is enabled.
+- So bootloader goes from 0x0800_0000 to 0x0800_7FFF. This comes from 0x0800_0000 + 32KB = 0x0800_0000 + 0x8000 = 0x0800_8000 - 0x1 (to get the END address) = 0x0800_7FFF.
+- Bank A will now run from the NEXT number (0x0800_8000) to the end of bank A (0x080F_FFFF).
+- Bank B needs to be on the EXACT same memory space (different addresses).
+- Starting address for Bank 2: 0x0810_0000.
+- We add 32KB to it: 0x0810_8000 - 0x1 = 0x0810_7FFF. Now we run from 0x0810_8000 to the end 0x081F_FFFF for Bank B, and we have the symmetry and addresses lined up.
+- So slot A and B are 992KB each.
+- The flash has a same-bank read-while-write restriction rule. So, we keep the metadata in the second bank and keep the bootloader at the first.
+- Now let's get this in table form:
+
+![Hand-drawn memory map: bootloader, Slot A, metadata, Slot B](image-5.png)
+ 
+---
+ 
+## Linker Script
+ 
+Now working on the linker script (using the pre-built one from stm32 which comes in the project folder, just need to edit it to ensure it matches my memory map).
+ 
+- So it tells us WHICH memory regions exist and WHERE each chunk of your compiled code goes.
+- ENTRY(Reset_Handler) tells the linker the program's entry symbol is Reset_Handler.
+- _estack = ORIGIN(RAM) + LENGTH(RAM) and _sstack = _estack - _Min_Stack_Size.
+- These are compute symbols for the STACK itself. _estack is the top of RAM (stack grows downward on ARM).
+- So this ends up in the vector table as word 0.
+- We can define a variable AFTER using it in .ld files.
+- Linker script: acts as a blueprint of the entire memory layout. Defines available physical memory and maps program sections into those regions.
+- LMA (Load Memory Address): where data is written at rest (Flash/ROM).
+- VMA (Virtual Memory Address): where data/code lives and executes at runtime (RAM).
+- In the existing .ld file, we make changes to the memory block which shows the memory split for RAM, SRAM, and Flash. Rwx is read, write, executable respectively.
+- Every program (project) has one linker file which puts everything together and translates the binaries to output. Now, I initially thought that because the stm project folder gave me two linker scripts (RAM and FLASH), we need to work with BOTH at the same time and also make the same files for the bootloader, bank A/B, etc.
+- HOWEVER, the two files are for two different build configurations of the same program. We work on the Flash for this project, so we use that linker script. Now the split: both slot A and slot B are parts of the APPLICATION. This means they get their own linker script. So, we make two linker scripts in total. Metadata does not need a linker script as it is not compiled code and does not need to be linked. The BOOTLOADER will refer to its address and read/write directly.
+- So all I need to do is make the RAM size the same size as that of our bootloader. Remember that the RAM would be shared between the bootloader and app. RAM regions would matter when we get to that part.
+The app is the LEDs blinking.
+ 
+Checking the actual size used:
+- Text + data = 2188 + 0 = 2188 Bytes = 2.137KB.
+- So we have some headroom now.
+Next step: make the application (separate file with its own linker script) which blinks the LED at a different (faster) rate than the bootloader app we have right now, just to ensure we are actually making the jump and it isnt just calling a function.
+ 
+---
+ 
+## Bootloader to Application Jump
+ 
+Ok the new application project is set, we need to jump to it now.
+ 
+- The hardware runs a tiny bootstrap sequence before any of our C executes. It reads from the vector table and uses that data to start running code.
+- Basically, the hardware will jump to the bootloader using this sequence.
+- Looking at the main article source (for theory of a bootloader): https://interrupt.memfault.com/blog/how-to-write-a-bootloader-from-scratch#setting-the-stage
+- We need to make variables within the .ld file which we can reference in the bootloader.c file. We have two separate projects, so it wouldn't be as easy as they have done it, but we can use the same idea.
+- Now remember when we pull a linker symbol into C, the symbol's VALUE becomes the address of the C symbol, not its contents. So refer to it using &.
+- Note: we jump to the vector table FIRST, which pulls the initial stack pointer and the reset handler before any code runs. This links the hardware to the bootloader code which is then the first piece of code to be executed.
+- The initial stack pointer sets the top of the stack. The reset handler points to the start of the bootloader code.
+- Process:
+  - The CPU reads the vector table (word 0 loads into the SP, word 1 loads into PC using resethandler).
+  - Only THEN does execution begin.
+  - Word 0: initial main stack pointer, the ACTUAL VALUE the SP should take on boot.
+  - Word 1: reset vector, holds the ADDRESS of the reset handler function.
+- VTOR: Vector Table Offset Register. Tells the CPU core where to find the active vector table.
+### Sequence
+ 
+- The CPU runs the bootloader using its mechanism (the same mechanism we would use, described below).
+- In order for the CPU to jump to something like an app or a bootloader, it must read the vector table to know where to start.
+- The vector table has two words the system would need for its work. Therefore, we need to get these elements to perfectly emulate what the hardware did and what the system fetched on a real hardware reset:
+  - Word 0 first: the VALUE that the stack pointer should take on boot.
+  - Word 1 next: the reset vector, which is the address of the reset handler function.
+- NOW, we update the VTOR for future hardware interrupts so they are handled properly and not just go back to the bootloader.
+- The reset handler is a function which holds the actual STARTUP code. When we load word 1 into PC and branch, we are at the app's entry point.
+- We want to jump to the application, so we use this same mechanism WITHIN the bootloader to jump to the application. The reset handler takes us there.
+Some basics to know before I write the sequence:
+- Once we branch, it is not the handoff code anymore. So that is the END.
+- We need to make sure we set the SP BEFORE we branch into the application.
+- We need to make sure the VTOR is also changed before the jump.
+- But remember that setting the SP and the jump need to be together in succession.
+Final Sequence:
+1. Read app's word 0 (SP value) and word 1 (resethandler address) while remaining on the stack we are on right now.
+2. Set VTOR. Safely do it on the same stack.
+3. Set the stack pointer (SP) to the app's word 0 value.
+4. Branch to the app's word 1.
+5. Done.
+### The jump mechanism
+ 
+Need to do something new: the thing confusing me while coding was HOW do I jump. The article uses a different way of doing things. We have a simple function called __set_MSP() which does the job for setting the stack pointer. Now, the issue comes with how the app will execute. How do we get to the code? For that, I had to research more. It turns out we use a typedef function pointer which takes in nothing and returns nothing but acts as a function. So when we want to call a function which JUMPS, we create another type of this function pointer and use a cast to make the reset_handler_address seem like THERE is a FUNCTION there which the PC needs to execute, so it goes straight there.
+ 
+### Thumb state
+ 
+Ok that's done but there is another thing: Thumb state. Our system runs the Thumb Instruction set. Bit 0 of the target selects the instruction-set state and it must be 1 to EXECUTE thumb state here. So we need to set bit 0 to 1 in order for the code to work. However, the linker stores the reset handler's address with bit 0 already set to 1. So the bit is preserved and we can move on.
+ 
+### Interrupts during handoff
+ 
+- We need to disable interrupts at the start of handoff so something doesn't happen between setting the pointer, jumping, and executing the first line of code in the application.
+- BUT remember to enable the interrupts in the first line of the APP in order to ensure it can make use of it.
+### Debugging the jump
+ 
+- Ok not working. Ran through the debugger. Prints are happening but it is breaking at a number which hasn't shown up since it first did, but the two LEDs turn on as soon as we press 'go into' the function call.
+- Doing the app as a standalone run: blinks the LEDs, but breaks at address 0x800066c which seems to be INSIDE the bootloader itself, which means something is off with the memory split. Then I realised that the system runs from 0x08000000 FROM DEFAULT, so my standalone app which starts later would encounter errors right now. So forget about that and see WHY the link isnt working.
+VTOR alignment rule:
+- The LOW bits of VTOR are fixed. The table must be aligned to the number of exception entries rounded up to a power of two, and there's a minimum alignment floor.
+### Main learning points from this
+ 
+1. At reset the hardware reads the bootloader's Vector Table, and on the handoff the code reads the app's word 0 (SP value) and word 1 (resethandler address) from its base. Word 0 is at the base and word 1 is base + 4.
+2. The Thumb bit needs to be set to 1 in order for it to work. In our case, the linker already sets it. It wouldn't work if this bit was cleared because we work on a thumb-instruction system.
+3. We need to set the VTOR (vector table offset register) in order to tell the CPU where the ACTIVE vector table is. We assign this to a NEW table (for the app) after using the current stack. We need the ACTIVE one because we don't want the application going into the bootloader's vector table.
+4. VTOR -> SP -> Branch. This was the single most difficult and important part of this milestone. We need to set VTOR first to the app's base because we don't want to harm the stack. So we do it while we are safe on the valid bootloader stack. The SP value is set after, and right after that we branch. The Stack Pointer needs to be set BEFORE branching because once we branch, we have no way of coming back or accessing anything from before. Also, there should not be anything between the SP being set and the Branching. I tried to add a print statement and it faulted to garbage. This should not be done because C relies on the stack to manage function execution, so the new stack is polluted before a branch.
+5. The debugger giving those broken addresses did not mean anything since it was a build issue. The solution was to go into the bootloader's debug configurations, startup, and add the application file to the image/symbol load. Then I pressed debug and it successfully took me from the bootloader to the application. Then I conducted a hard reset by clicking the rst button on the mcu and even plugging it in and out. The LEDs started blinking as intended in the application main.c file. So it is now a success and we have jumped from bootloader to application.
+6. Another thing I learned was that the clock configurations stay the same. The hardware has etched itself with the PLL config we did earlier from the bootloader and it carries over into the application. I need to work on this to ensure that the APPLICATION does this and the bootloader is independent of that stuff. However, I'll see, because what if I need the clock in there for something. So might as well keep it simple for now.

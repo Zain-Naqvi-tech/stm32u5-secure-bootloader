@@ -1,0 +1,9 @@
+# Ignore CubeIDE build folders
+Debug/
+Release/
+
+# Ignore compiled objects and binaries
+*.o
+*.elf
+*.bin
+*.hex
