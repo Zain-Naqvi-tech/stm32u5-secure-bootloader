@@ -23,6 +23,7 @@
 #include "stm32u585xx.h"
 #include "PLL.h"
 #include "uart.h"
+#include "flash.h"
 
 #define APP_START_ADDRESS 0x08008000 //defines the location of where the application starts (start of slot A)
 
@@ -47,6 +48,11 @@ int main(void)
 //	USART1_WriteString(integer_string);
 
 	//Start the hand-off
+
+	USART1_WriteString("Going into the unlock-lock test\n");
+
+	unlock_flash_nscr();
+	lock_flash_nscr();
 
 	const char string[] = "Going into hand-off\n";
 	USART1_WriteString(string);
