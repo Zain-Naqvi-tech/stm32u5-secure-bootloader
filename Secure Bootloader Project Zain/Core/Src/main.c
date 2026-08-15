@@ -52,6 +52,9 @@ int main(void)
 	USART1_WriteString("Going into the unlock-lock test\n");
 
 	unlock_flash_nscr();
+
+	page_erase();
+
 	lock_flash_nscr();
 
 	const char string[] = "Going into hand-off\n";

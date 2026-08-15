@@ -10,5 +10,6 @@
 
 void unlock_flash_nscr(void);
 void lock_flash_nscr(void);
+void page_erase(void);
 
 #endif /* FLASH_H_ */

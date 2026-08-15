@@ -45,7 +45,7 @@ int main(void)
 
 	while (1) {
 
-		//USART1_WriteString("LED ON\n");
+		//USART1_WriteString("WE ARE IN THE APP\n");
 
 		//set bits 22 and 23 (reset bits) in order to turn ON the LEDs
 		GPIOH->BSRR = 0x00C00000;
