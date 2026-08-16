@@ -12,6 +12,14 @@
 #include "flash.h"
 #include "uart.h"
 
+#define PAGE_ADDRESS 0x08108000
+
+void invalidate_icache(void) {
+	//invalidate the ICACHE BEFORE reading in order to ensure we do not read a cached value
+	ICACHE->CR |= (1U << 1); //set bit 1 (CACHEINV) to invalidate entire cache
+	while (!(ICACHE->SR & (1U << 1))) {} //wait until the BSYENDF bit is 1
+}
+
 void unlock_flash_nscr(void) {
 
 	if (FLASH->NSCR & (1U << 31)) {
@@ -74,10 +82,12 @@ void page_erase(void) {
 		while(1) {} //erase failed
 	}
 
+	//invalidate the ICACHE before reading
+	invalidate_icache();
+
 	//check the actual address. If it is all 0xFF bytes then the erase was a success
 	volatile uint32_t *addr = (volatile uint32_t*)0x08108000;
 	volatile uint32_t fail = 0;
-	volatile uint32_t success = 0;
 	uint32_t COUNT = 2048;
 	for (uint32_t i = 0; i < COUNT; i++) {
 		if (addr[i] == 0xFFFFFFFF) {}
@@ -93,5 +103,74 @@ void page_erase(void) {
 	}
 }
 
+void write_flash(uint32_t *address, uint32_t quad_word[4]) {
 
+	//set EOPIE bit in FLASH_NSCR to enable interrupt
+	FLASH->NSCR |= (1U << 24);
 
+	//check that no main flash memory sequence is currently ongoing
+	while ((FLASH->NSSR) & (1U << 16)) {} //wait for the BSY bit to clear in order to proceed
+
+	//check that the write buffer is empty by checking WDW
+	while ((FLASH->NSSR) & (1U << 17)) {} //wait for the WDW bit to clear (technically only checking if it is clear and not really 'waiting')
+
+	//check and clear all error programming flags due to a previous programming
+	FLASH->NSSR = 0x20FB; //this register operates on a rw_cl system where writing a 1 clears the bit. So, a hex number is used which keeps the remaining bits 0 and writes 1 to the error bits which clears them
+	if ((FLASH->NSSR) & (1U << 7)) { //if PGSERR is set, it means we have not cleared it properly
+		while(1) {} //a sort of breakpoint if anything goes wrong
+	}
+
+	//Set PG
+	FLASH->NSCR |= (1U << 0); //set bit 0 to enable FLASH programming
+
+	//carve out the address of the page's start
+	uint32_t *function_address = (uint32_t*)address;
+
+	//write the quad_word into that address
+	function_address[0] = quad_word[0];
+	function_address[1] = quad_word[1];
+	function_address[2] = quad_word[2];
+	function_address[3] = quad_word[3];
+
+	//check that the write buffer is empty by checking WDW
+	while ((FLASH->NSSR) & (1U << 17)) {} //wait for the WDW bit to clear (technically only checking if it is clear and not really 'waiting')
+
+	//now wait for the BSY bit to be cleared
+	while ((FLASH->NSSR) & (1U << 16)) {}
+
+	//if the EOP bit is set, the operation was a success. Proceed to clear it
+	if ((FLASH->NSSR) & (1U << 0)) {
+		FLASH->NSSR = 0x01; //clears EOP
+	}
+
+	//clear PG
+	FLASH->NSCR &= ~(1U << 0); //clear bit 0 to disable FLASH programming
+
+	//invalidate ICACHE
+	invalidate_icache();
+
+	char string[10];
+
+	//verify if the write was a success
+	for (volatile uint32_t i = 0; i < 4; i++) {
+		int_to_str(function_address[i], string);
+		USART1_WriteString(string);
+	}
+	USART1_WriteString("\n");
+
+	//do a pass/fail verification
+	int fail = 0;
+	for (volatile uint32_t j = 0; j < 4; j++) {
+		if (function_address[j] == quad_word[j]) {}
+		else {
+			fail++;
+		}
+	}
+	if (fail == 0) {
+		USART1_WriteString("WRITE SUCCESSFUL\n");
+	}
+	else {
+		USART1_WriteString("WRITE FAIL\n");
+	}
+
+}

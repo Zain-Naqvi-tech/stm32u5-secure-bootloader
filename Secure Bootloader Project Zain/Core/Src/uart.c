@@ -87,10 +87,10 @@ void USART1_WriteString(const char *string) {
 
 }
 
-void int_to_str(int n, char str[]) {
+void int_to_str(uint32_t n, char str[]) {
 
-	int i;
-	int temp_n;
+	uint32_t i;
+	uint32_t temp_n;
 	int count;
 
 	if (n == 0) {
@@ -112,7 +112,7 @@ void int_to_str(int n, char str[]) {
 	}
 
 	//reverse the string in order to keep the original number intact
-	int start, end;
+	uint32_t start, end;
 	start = 0;
 	end = count - 1;
 	int temp;

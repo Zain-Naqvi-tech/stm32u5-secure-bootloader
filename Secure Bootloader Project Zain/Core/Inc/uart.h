@@ -13,6 +13,6 @@
 void USART1_Init(void);
 void USART1_WriteChar(const char character);
 void USART1_WriteString(const char *string);
-void int_to_str(int n, char str[]);
+void int_to_str(uint32_t n, char str[]);
 
 #endif /* INC_UART_H_ */
