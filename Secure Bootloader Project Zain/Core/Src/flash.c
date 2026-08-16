@@ -79,7 +79,7 @@ void page_erase(void) {
 
 	//check if the erase was successful
 	if (FLASH->NSSR & 0x20FB) {
-		while(1) {} //erase failed
+		USART1_WriteString("ERASE FAIL (ERROR RAISED)\n");
 	}
 
 	//invalidate the ICACHE before reading
@@ -145,6 +145,16 @@ void write_flash(uint32_t *address, uint32_t quad_word[4]) {
 
 	//clear PG
 	FLASH->NSCR &= ~(1U << 0); //clear bit 0 to disable FLASH programming
+
+	if (FLASH->NSSR & 0x20FB) {
+		USART1_WriteString("WRITE FAIL (ERROR RAISED)\n");
+		if (FLASH->NSSR & (1U << 5)) {
+			USART1_WriteString("PGAERR raised\n");
+		}
+		if (FLASH->NSSR & (1U << 3)) {
+			USART1_WriteString("PROGERR raised\n");
+		}
+	}
 
 	//invalidate ICACHE
 	invalidate_icache();

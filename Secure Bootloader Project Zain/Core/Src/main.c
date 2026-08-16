@@ -26,7 +26,7 @@
 #include "flash.h"
 
 #define APP_START_ADDRESS 0x08008000 //defines the location of where the application starts (start of slot A)
-#define FLASH_TEST_ADDRESS 0x08108000 //defines the location of where the bit aligned quad word will live
+#define FLASH_TEST_ADDRESS 0x08108004 //defines the location of where the bit aligned quad word will live
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
 #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
@@ -55,16 +55,6 @@ int main(void)
 	USART1_WriteString("Going into the unlock-lock test\n");
 
 	unlock_flash_nscr();
-
-	//read from the FLASH (last write)
-	invalidate_icache();
-	char temp_str[4];
-	volatile uint32_t *addr = (volatile uint32_t*)FLASH_TEST_ADDRESS;
-	for (int i = 0; i < 4; i++) {
-		int_to_str(addr[i], temp_str);
-		USART1_WriteString(temp_str);
-		USART1_WriteString("\n");
-	}
 
 	page_erase();
 
