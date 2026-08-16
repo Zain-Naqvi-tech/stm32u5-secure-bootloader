@@ -488,3 +488,66 @@ Next is to erase a page and see it works:
 ### Aside
  
 .bss = memory section in RAM that stores global and static variables which are uninitialized or explicitly initialized to zero (forgot to add this earlier).
+
+## Writing a Quad-Word and Verifying It
+
+Next step is to write a quad-word and verify it landed.
+
+So, we unlock, write, lock.
+
+So we program into the page we just erased. Remember all we can do is make the 1s -> 0s.
+
+First step is to read the steps that the manual gives us and the ICACHE chapter.
+
+Before executing or verifying written code, you must manually invalidate the cache and wait until finished (look at section 8.4.11).
+
+So we need to write one quad-word into the page and read it after.
+
+So our function needs to take in an address (where to write the flash data) and the data itself. So it's going to take a pointer to where the address starts and an array of 4 words for now (a quad word).
+
+### Byte alignment
+
+New lesson is about byte alignment, because the RM really focuses on the address being quad-word aligned:
+
+- Aligned to X bytes means an address is aligned to a boundary of X bytes if it is an EXACT multiple of X. Aligned to 16 means the address is a multiple of 16: 0, 16, 32, 48.
+- Ahh so the quad word needs to start from the exact boundary.
+- MAIN POINT: A multiple of 16 always has its low 4 bits equal to zero. Why 4??? Because 16 = 2^4.
+- RULE: Any multiple of 2^n has its low n bits zero.
+
+So the low four bits of our address 0x08108000 are 0000 so it is 16-bit aligned.
+
+Im going to note this down again. On registers where it is read/clear by writing 1, if we write a 0 to any bit, it DOES NOT AFFECT THE BIT. If we write a 1, it clears it. Please remember this now.
+
+### Where to store the word
+
+Ok I was having trouble WHERE to store the word after I've gotten the address pointer and everything. We know that a word which is 32 bits must be stored in the 4 bytes of the address's section. So the address moves by 4 bytes every time we need to store something. So we can simply do something like indices. Address[0] = quad_word[0] and the indices move together.
+
+### Result
+
+![Quad-word write and read-back result](image-6.png)
+
+Ok this is the result based on the complete code. Now the issue is that I need to COMPLETELY make sure that the ICACHE isn't harming our readings. So along with the invalidation of ICACHE before reading, I must now also CONFIRM that we are not reading from cache. So, I will read a string or an array of numbers first, print them out, loop over them etc. This will save them in a cache considering the array is being called consistently in a loop. Now, I will go and ERASE the flash page and write a new pattern into it. Now, if it speaks out the new pattern, we will know that it is working as intended. If it prints out the old array again, it is giving out cached values, and the invalidation and BSYENDF flag are not working as intended. Remember that we are trying to sort of bait the cache. The MAIN thing is that flash is non-volatile so it is going to hold these values from the last run because we don't erase after writing. So now basically, we read the flash values, print them, then erase the page and program something different into it (6,7,6,7). Then read it back in the write function like we are doing. If it gives the cached version, cooked. Else, good. Also, remember to ENABLE the icache in order to test it properly. Ok so I didn't run the 6,7,6,7 experiment because the page_erase itself showed me the issues with using stale values from icache.
+
+Ok so I enabled icache, then I wrote a for loop reading from the flash address. Now when I go onto erase, it says ERASE FAILED. For the first quad-word on that address, the cache still holds the stale 1,2,3,4. So the verify counts it as a mismatch and we print ERASE FAIL. So now we know that any time you read flash AFTER modifying it, erase or program into it, you MUST invalidate the icache first. So this means I should make a new invalidate function which can actually be called wherever a post-modification read happens.
+
+Ok I made an invalidate_icache function and called it before reading from the address in main.c and again in the flash.c file before reading to verify it.
+
+Ok all good, so I was able to successfully write a quad word into a quad-word aligned address in flash and read it back. The invalidity stuff works and I understand how the ICACHE memory 'corruption' or more so 'wrong' read works because all it is doing is trying to save time and energy.
+
+Ok onto the next thing. Let's work on the errors that each operation might throw: read/erase/write.
+
+ICACHE was enabled by me for the cache test. Earlier tests ran with it OFF.
+
+ICACHE is disabled out of reset on this part. I enabled it deliberately to expose the coherency hazard, reproduced a stale read in the erase verify. Cached 1,2,3,4 against physically-erased 0xFFFFFFFF.
+
+### Final lessons and results
+
+- It is a minimum programmable unit. The stm cannot program a single byte or a single 32-bit word to flash. The minimum is a quad-word (128 bits), i.e. four consecutive 32-bit words like we did. The hardware then sets the BSY bit and commits the quad-word in one operation.
+- One word is not possible. ECC bits are derived from the full 128-bit content. ECC is calculated once, at program time, over the whole quad-word. We can't store a valid ECC for a fragment of a quad-word. If only one word is needed, then pad the remaining 3 words with the erased value of 1s so a full quad-word is programmed and the ECC is computed properly.
+- The first word of the quad-word must sit on a quad-word-aligned address. An address that is an exact multiple of 16 bytes. Because 16 = 2^4, any 16-byte aligned address has its low FOUR bits zeroed out. So an address is quad-word aligned, if (addr & 0xF == 0).
+- An unaligned address sets PGAERR and the program is rejected.
+- PGAERR (programming alignment error): the first word of the quad-word is not on a 16 byte boundary.
+- SIZERR (size error): an access smaller than a 32-bit word was attempted. Only word-width writes into the buffer are legal.
+- PROGERR (programming error): an attempt to program a location that was not previously erased. (you can only drive bits from 1 -> 0 and cannot restore a 0 to a 1 without an erase.)
+
+![End-of-milestone result](image-7.png)
