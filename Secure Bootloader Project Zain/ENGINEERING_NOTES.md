@@ -423,3 +423,68 @@ VTOR alignment rule:
 4. VTOR -> SP -> Branch. This was the single most difficult and important part of this milestone. We need to set VTOR first to the app's base because we don't want to harm the stack. So we do it while we are safe on the valid bootloader stack. The SP value is set after, and right after that we branch. The Stack Pointer needs to be set BEFORE branching because once we branch, we have no way of coming back or accessing anything from before. Also, there should not be anything between the SP being set and the Branching. I tried to add a print statement and it faulted to garbage. This should not be done because C relies on the stack to manage function execution, so the new stack is polluted before a branch.
 5. The debugger giving those broken addresses did not mean anything since it was a build issue. The solution was to go into the bootloader's debug configurations, startup, and add the application file to the image/symbol load. Then I pressed debug and it successfully took me from the bootloader to the application. Then I conducted a hard reset by clicking the rst button on the mcu and even plugging it in and out. The LEDs started blinking as intended in the application main.c file. So it is now a success and we have jumped from bootloader to application.
 6. Another thing I learned was that the clock configurations stay the same. The hardware has etched itself with the PLL config we did earlier from the bootloader and it carries over into the application. I need to work on this to ensure that the APPLICATION does this and the bootloader is independent of that stuff. However, I'll see, because what if I need the clock in there for something. So might as well keep it simple for now.
+
+## Next Sequence (flash memory)
+
+I need to read on the three types of registers in Flash: Key register, Control register, and Status register. I also need to read about the unlock/key sequence, and learn about page-erase, alignment, and the ICACHE chapter.
+ 
+Flash Operation (from a google search):
+- Unlock -> select the operation -> trigger -> wait for not-busy -> check the error flags -> re-lock.
+### Reading chapter 7 (Embedded Flash Memory)
+ 
+- 4Mbytes of flash memory.
+- Page erase, bank erase, and mass erase (important to our task).
+- 7.3.5:
+  - The embedded flash memory can be programmed using in-circuit programming (ICP) or in-application programming (IAP).
+  - ICP is used to update the ENTIRE contents of the flash memory.
+  - IAP can use any communication interface supported by the MCU to download programming data into the memory. Note: the IAP allows the user to reprogram the flash memory while the application is running (in this case part of it should be programmed in the flash using ICP).
+  - Code or data fetches are possible on one bank while a write/erase operation is performed to the other bank.
+  - During a program/erase operation to the flash memory, any attempt to read the same flash memory bank stalls the bus. The read operation then continues after the program/erase is done.
+  - Erase Operation: set the STRT bit in FLASH_SECCR or FLASH_NSCR.
+  - Write Operation: setting PG in the flash register and writing a quad-word in the flash memory.
+  - Option-byte programming: setting OPTSTRT in the flash register.
+  - Unlocking the FLASH control registers: we use a sequence which uses keys shown in the RM.
+- Refer to 7.3.6 for complete steps on memory erase sequences for 'page erase', 'bank 1 / bank 2 mass erase', and 'mass erase'.
+- Refer to 7.3.7 for the main memory programming sequence.
+- Note: The stm32u5 cannot program a single byte or 32-bit word directly. It programs in a 137-bit quad-word system (128 bits of data + 9 bits of ECC).
+- Refer to 7.3.9 for Flash memory error flags.
+- Refer to 8.1 and 8.4 for ICACHE stuff.
+Let's read some of these sources and take down notes:
+ 
+7.3.6: read from the RM, basic steps.
+ 
+7.3.7: read from the RM, basic steps.
+ 
+7.3.9:
+- PROGERR error bit (overwriting un-erased data): programming error, set when the word to program is pointing to an address not previously erased, already fully programmed at 0, and other points.
+- SIZERR (incorrect access sizes): size programming error. Only 32-bit data can be written. It is set if a byte or half-word is written.
+- PGAERR (alignment issues): alignment programming error. Set when the first word to be programmed is not aligned with a quad-word address.
+- PGSERR: programming sequence error.
+8.1:
+- Used to improve performance when fetching instructions and data from internal and external memories.
+- It is a 2-way associative cache sitting directly on the Cortex-M33's C-AHB code bus. Its role is to keep copies of frequently fetched code lines to allow zero-wait-state execution.
+- Manages cacheable read transactions and not write transactions.
+### Unlocking the Flash control registers
+ 
+Why two keys instead of one:
+ 
+We need this two-key dance in order to unlock the FLASH_NSCR register, which is the flash non-secure register. Upon reset, this register is locked and we cant do anything with it, in order to ensure the memory is protected from things like electrical disturbances. The two-key system will unlock this register for us to code in.
+ 
+Now why TWO and NOT 1: having two distinct keys and having to use them in a specific order defeats an accidental unlock better than a single value or two random values in any order. Reasons: a single rogue pointer or a stray EMI glitch has a massive chance of flipping a register. By requiring two values in a specific order, we ignore that possibility. By forcing them both to be in the same register, we don't allow a SWEEP to happen. The rogue code has to target the same address twice now. There might be a glitch which can mimic the single value and accidentally unlock the system as well. Two makes it safer.
+ 
+Ok let's do it:
+ 
+Goal: unlock the Non-secure Flash register AFTER reset using the two-key system. We need to earn the right to WRITE into the control register. Then, we write to the flash, and remember to LOCK the register after as well.
+ 
+Done. Verified using usart prints.
+ 
+### Erasing a page
+ 
+Next is to erase a page and see it works:
+- We are going to erase a page from Bank 2, not Bank 1, because Bank 1 has the bootloader running on it. From Bank 2, we can choose any page from slot B because I don't want to touch the metadata stuff for now.
+- We can try erasing the first page of Slot B which starts at 0x0810_8000 and is 8KB long. Let's read the steps from the RM and see if it also tells us a way to measure the success, otherwise we can research that.
+- We are going to look at 7.3.6 for the steps.
+- The bits in NSSR are rc_w1, which means Read, Clear by Writing 1. So writing a 0 has no effect on it, and writing a 1 clears it. These are usually prompted by the hardware from what im inferring. Remember this is only for the status register, and we cant just write a word to an entire register just like that without harming anything in any other type.
+### Aside
+ 
+.bss = memory section in RAM that stores global and static variables which are uninitialized or explicitly initialized to zero (forgot to add this earlier).
