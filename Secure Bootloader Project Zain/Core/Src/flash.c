@@ -12,7 +12,8 @@
 #include "flash.h"
 #include "uart.h"
 
-#define PAGE_ADDRESS 0x08108000
+const Descriptor SlotA = {.size = 992, .start = 0x08008000, .bank = 1};
+const Descriptor SlotB = {.size = 992, .start = 0x08108000, .bank = 2};
 
 void invalidate_icache(void) {
 	//invalidate the ICACHE BEFORE reading in order to ensure we do not read a cached value
@@ -53,7 +54,7 @@ void lock_flash_nscr(void) {
 
 }
 
-void page_erase(void) {
+void page_erase(const Descriptor *Slot) {
 	//check that no flash memory operation is ongoing by checking the BSY bit
 	while ((FLASH->NSSR) & (1U << 16)) {}
 
@@ -86,7 +87,7 @@ void page_erase(void) {
 	invalidate_icache();
 
 	//check the actual address. If it is all 0xFF bytes then the erase was a success
-	volatile uint32_t *addr = (volatile uint32_t*)0x08108000;
+	volatile uint32_t *addr = (volatile uint32_t*)Slot->start;
 	volatile uint32_t fail = 0;
 	uint32_t COUNT = 2048;
 	for (uint32_t i = 0; i < COUNT; i++) {
@@ -103,7 +104,7 @@ void page_erase(void) {
 	}
 }
 
-void write_flash(uint32_t *address, uint32_t quad_word[4]) {
+void write_flash(uint32_t quad_word[4], const Descriptor *Slot) {
 
 	//set EOPIE bit in FLASH_NSCR to enable interrupt
 	FLASH->NSCR |= (1U << 24);
@@ -124,7 +125,7 @@ void write_flash(uint32_t *address, uint32_t quad_word[4]) {
 	FLASH->NSCR |= (1U << 0); //set bit 0 to enable FLASH programming
 
 	//carve out the address of the page's start
-	uint32_t *function_address = (uint32_t*)address;
+	uint32_t *function_address = (uint32_t*)Slot->start;
 
 	//write the quad_word into that address
 	function_address[0] = quad_word[0];

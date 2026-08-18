@@ -26,7 +26,7 @@
 #include "flash.h"
 
 #define APP_START_ADDRESS 0x08008000 //defines the location of where the application starts (start of slot A)
-#define FLASH_TEST_ADDRESS 0x08108004 //defines the location of where the bit aligned quad word will live
+#define FLASH_TEST_ADDRESS 0x08108000 //defines the location of where the bit aligned quad word will live
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
 #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
@@ -40,14 +40,6 @@ int main(void)
 	PLL_Init();
 	USART1_Init();
 
-//	const char string[] = "Successful Initializations\n";
-//	char integer_string[5];
-//	int n = 565;
-//
-//	int_to_str(n, integer_string);
-//
-//	USART1_WriteString(integer_string);
-
 	//Start the hand-off
 
 	ICACHE->CR |= (1U << 0); //enable ICACHE
@@ -56,11 +48,11 @@ int main(void)
 
 	unlock_flash_nscr();
 
-	page_erase();
+	page_erase(&SlotB);
 
 	uint32_t quadWord[4] = {1,2,3,4};
 
-	write_flash((uint32_t*)FLASH_TEST_ADDRESS, quadWord);
+	write_flash(quadWord, &SlotB);
 
 	lock_flash_nscr();
 
