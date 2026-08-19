@@ -11,9 +11,11 @@
 #include "stm32u585xx.h"
 #include "flash.h"
 #include "uart.h"
+#include "CRC.h"
 
 const Descriptor SlotA = {.size = 992, .start = 0x08008000, .bank = 1};
 const Descriptor SlotB = {.size = 992, .start = 0x08108000, .bank = 2};
+const Descriptor SlotMetadata = {.size = 32, .start = 0x08100000, .bank = 2};
 
 void invalidate_icache(void) {
 	//invalidate the ICACHE BEFORE reading in order to ensure we do not read a cached value
@@ -67,8 +69,19 @@ void page_erase(const Descriptor *Slot) {
 	//Set PER bit and select the page to erase (PNB) with the associated bank (BKER) in FLASH_NSCR
 	FLASH->NSCR |= (1U << 1); //page erase enabled (PER)
 	FLASH->NSCR &= ~(0xFFU << 3); //clear the 8 bits responsible for choosing the page number (PNB)
-	FLASH->NSCR |= (0x04 << 3); //set the 8 bits to 0x04 in order to write to Page 4 (first page of slot B)
-	FLASH->NSCR |= (1U << 11); //Bank 2 selected for page erase (BKER)
+
+	if (Slot->bank == 1) {
+		uint8_t PNB = (Slot->start - 0x08000000) / 0x2000;
+		FLASH->NSCR |= (PNB << 3); //set the 8 bits to PNB in order to write to Page
+
+		FLASH->NSCR &= ~(1U << 11); //clear bit 0 to select bank 1 for page erase (BKER)
+	}
+	if (Slot->bank == 2) {
+		uint8_t PNB = (Slot->start - 0x08100000) / 0x2000;
+		FLASH->NSCR |= (PNB << 3); //set the 8 bits to PNB in order to write to Page
+
+		FLASH->NSCR |= (1U << 11); //set bit 1 to select bank 2 for page erase (BKER)
+	}
 
 	//set STRT in FLASH_NSCR
 	FLASH->NSCR |= (1U << 16);
@@ -166,6 +179,7 @@ void write_flash(uint32_t quad_word[4], const Descriptor *Slot) {
 	for (volatile uint32_t i = 0; i < 4; i++) {
 		int_to_str(function_address[i], string);
 		USART1_WriteString(string);
+		USART1_WriteString("\n");
 	}
 	USART1_WriteString("\n");
 

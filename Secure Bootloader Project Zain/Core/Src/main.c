@@ -24,6 +24,8 @@
 #include "PLL.h"
 #include "uart.h"
 #include "flash.h"
+#include "myMetadata.h"
+#include "CRC.h"
 
 #define APP_START_ADDRESS 0x08008000 //defines the location of where the application starts (start of slot A)
 #define FLASH_TEST_ADDRESS 0x08108000 //defines the location of where the bit aligned quad word will live
@@ -39,6 +41,7 @@ int main(void)
 	//PortH_Init();
 	PLL_Init();
 	USART1_Init();
+	CRC_Init();
 
 	//Start the hand-off
 
@@ -48,11 +51,15 @@ int main(void)
 
 	unlock_flash_nscr();
 
-	page_erase(&SlotB);
+	page_erase(&SlotMetadata);
 
-	uint32_t quadWord[4] = {1,2,3,4};
+	uint32_t quadWord[4] = {0,0,0,0};
 
-	write_flash(quadWord, &SlotB);
+    MetaData_QuadWord(&MD, quadWord);
+
+	write_flash(quadWord, &SlotMetadata);
+
+	MetaData_Verify(&SlotMetadata);
 
 	lock_flash_nscr();
 

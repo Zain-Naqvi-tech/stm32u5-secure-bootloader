@@ -24,5 +24,6 @@ void invalidate_icache(void);
 
 extern const Descriptor SlotA;
 extern const Descriptor SlotB;
+extern const Descriptor SlotMetadata;
 
 #endif /* FLASH_H_ */
