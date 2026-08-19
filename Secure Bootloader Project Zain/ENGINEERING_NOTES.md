@@ -551,3 +551,23 @@ ICACHE is disabled out of reset on this part. I enabled it deliberately to expos
 - PROGERR (programming error): an attempt to program a location that was not previously erased. (you can only drive bits from 1 -> 0 and cannot restore a 0 to a 1 without an erase.)
 
 ![End-of-milestone result](image-7.png)
+
+Ok let's learn more about the errors part. 
+
+First thing - I have added an error check in the function write_flash() just like the one we had in page_erase() - just checking the error bits and if anything is raised, print 'failed due to error flag being raised'
+
+Test 1: Alignment Error (Expect PGAERR) - let's quickly do a write on an unaligned address and see what happens. A number like that could be 0x0810_8004 (last 4 bits are 0100). Ok so I just changed the address and ran.
+
+Result:
+![Result](image-8.png)
+
+So it says WRITE failed due to an error being raised which is definitely the PGAERR for unalignment. Now what are these RANDOM numbers we are reading? Turns out it is the integer value for 0xFFFFFFFF. It is the ERASED VALUE. 
+
+Test 2: Program over unerased (PROGERR). Let's write a word, then without erasing, write another word to the SAME address. 
+
+Result:
+![Result](image-9.png)
+
+Alright, all good! The second write was a FAIL with an error being raised.
+
+Now let's work on removing all the debugging prints and making it a better driver which is actually inferred in main rather than in the file itself. So let's make it so that every function returns a ZERO upon success and a ONE upon failure. Now for failures, im thinking of using an enum to actually SHOW what went wrong so it's better for us in the future. 
