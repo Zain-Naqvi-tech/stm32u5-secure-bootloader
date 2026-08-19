@@ -14,7 +14,7 @@ typedef struct {
 	uint32_t magicIdentifier; //4 bytes
 	uint32_t imageVersion; //4 bytes
 	uint32_t checksum; //4 bytes
-	char activeSlot; //1 byte
+	uint8_t activeSlot; //1 byte
 
 	//add 3 bytes of reserved data to complete 16 bytes (details in notes regarding not trusting padding especially for flash writes)
 	uint8_t reserved[3];
@@ -24,6 +24,9 @@ extern Metadata MD;
 
 //returns the quad-word[4] needed to be written into the metadata region of FLASH
 void MetaData_QuadWord(Metadata *MD, uint32_t *quad_word);
-void MetaData_Verify(Descriptor *Slot);
+
+uint32_t* MetaData_Latest_Entry(Metadata *MD, Descriptor *Slot);
+
+void MetaData_Update_Fields(Metadata *MD, int act_Slot);
 
 #endif /* MYMETADATA_H_ */

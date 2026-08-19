@@ -19,7 +19,7 @@ typedef struct {
 void unlock_flash_nscr(void);
 void lock_flash_nscr(void);
 void page_erase(const Descriptor *Slot);
-void write_flash(uint32_t quad_word[4], const Descriptor *Slot);
+void write_flash(uint32_t quad_word[4], uint32_t *address);
 void invalidate_icache(void);
 
 extern const Descriptor SlotA;

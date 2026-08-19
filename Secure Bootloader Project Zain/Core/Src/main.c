@@ -53,13 +53,27 @@ int main(void)
 
 	page_erase(&SlotMetadata);
 
-	uint32_t quadWord[4] = {0,0,0,0};
+	//TEST REGION
 
-    MetaData_QuadWord(&MD, quadWord);
+	uint32_t quadWord[4] = {0,0,0,0}; //placeholder start for the quad-word to be written to memory
 
-	write_flash(quadWord, &SlotMetadata);
+	uint32_t *address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
 
-	MetaData_Verify(&SlotMetadata);
+    MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
+
+	write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+
+	address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
+
+	MetaData_Update_Fields(&MD, 2);
+
+    MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
+
+	write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+
+
+
+	//TEST REGION
 
 	lock_flash_nscr();
 

@@ -117,7 +117,7 @@ void page_erase(const Descriptor *Slot) {
 	}
 }
 
-void write_flash(uint32_t quad_word[4], const Descriptor *Slot) {
+void write_flash(uint32_t quad_word[4], uint32_t *address) {
 
 	//set EOPIE bit in FLASH_NSCR to enable interrupt
 	FLASH->NSCR |= (1U << 24);
@@ -138,7 +138,7 @@ void write_flash(uint32_t quad_word[4], const Descriptor *Slot) {
 	FLASH->NSCR |= (1U << 0); //set bit 0 to enable FLASH programming
 
 	//carve out the address of the page's start
-	uint32_t *function_address = (uint32_t*)Slot->start;
+	uint32_t *function_address = (uint32_t*)address;
 
 	//write the quad_word into that address
 	function_address[0] = quad_word[0];
