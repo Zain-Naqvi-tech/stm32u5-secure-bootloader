@@ -71,8 +71,6 @@ int main(void)
 
 	write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
 
-
-
 	//TEST REGION
 
 	lock_flash_nscr();

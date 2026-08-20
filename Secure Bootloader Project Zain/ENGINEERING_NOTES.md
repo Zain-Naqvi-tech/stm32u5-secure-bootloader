@@ -571,3 +571,46 @@ Result:
 Alright, all good! The second write was a FAIL with an error being raised.
 
 Now let's work on removing all the debugging prints and making it a better driver which is actually inferred in main rather than in the file itself. So let's make it so that every function returns a ZERO upon success and a ONE upon failure. Now for failures, im thinking of using an enum to actually SHOW what went wrong so it's better for us in the future. 
+
+## Giving the Metadata Value: Tracking Active State
+
+Ok now working on the next thing. We need to give the metadata some value: which version are we running, is it valid, which slot is active. We need to track the ACTIVE state and be able to write to either partition.
+
+### Initial Thoughts
+
+In order to find the NEWEST, a for loop will keep going forward with jumps the size of a quad-word. It will first check if quad_word[0], the first element, the magic identifier, is 0xDEADBEEF. If so, we good and jump. IF NOT, we look at the quad_word BEHIND it and we know it is the latest one, we choose (i - 1). Now this is the (i - 1)th quad word. How would we get to this? Oh just jump the start address by 20 as many times as we have looped. Keep going forward. Just did the calc using ai: if we are at address 0x08108000 and the quad word is 137 bits (18 bytes approx), we need to jump to 0x08108020 in order for the next 16-byte aligned word to be in place.
+
+### Fixed Thoughts
+
+All good except for the jump. I have to use the 128 bit value, not 137, which is a physical thing.
+
+So if we start at address 0x08108000, the next quad_word will be at 0x08108010 as this is the next 16-byte aligned word, also being +4+4+4++ away from the last one.
+
+- We need to add an empty case where the first one is empty as well.
+- Check checksum as well, not just magic identifier.
+- Ensure the pointer arithmetic works out.
+
+### Notes for code
+
+- Magic + checksum to check validity.
+- Empty case.
+- Move 16 bytes.
+- Find newest, extract important info, append.
+
+### Brainstorming the functions
+
+Ok let's do some brainstorming for functions. We need to first FIND the next available slot let's say.
+
+Basic sequence is: Find newest by looping like that -> query reads the fields and the append writes a new record at newest + 16.
+
+### Sequence for code
+
+- Start address of Metadata: 0x08100000, bank 2.
+- Latest_Entry() function which takes in a Metadata pointer and a descriptor pointer.
+- Uses a while loop and a flag to exit the loop. The flag clears once we find the latest entry.
+- In the loop, we need to check for validity AND non-emptiness. So, if the magicIdentifier is correct AND the checksum is correct, we jump to the next quad_word in the metadata.
+- Else, we go back to the previous quad_word and return either the array or make changes to the MD struct using a pass by reference feature. Ok it is better to just return the struct so we can actually extract stuff from it.
+- Another thing: how does it fit into the grand scheme of things, where do I place this??? Id assume at the start (before writing into it). Because in case of it being empty, we simply make another quad word at the next slot with the changed values, so something a little different than what we have been doing in terms of writes and erases.
+- Ok im dropping the Query function, no need for it if we are getting the struct anyways. Ok the write() function will now take an address and not these slot things.
+
+Ok lets do some calculation. 0x0810_0000 + 16 bytes = 0x0810_0000 + 0x0000_0010 = 0x0810_0010 which is the new address to append to or go to and check :)
