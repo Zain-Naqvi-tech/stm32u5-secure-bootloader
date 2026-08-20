@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include "stm32u585xx.h"
 #include "flash.h"
-#include "uart.h"
 #include "CRC.h"
 
 const Descriptor SlotA = {.size = 992, .start = 0x08008000, .bank = 1};
@@ -23,11 +22,7 @@ void invalidate_icache(void) {
 	while (!(ICACHE->SR & (1U << 1))) {} //wait until the BSYENDF bit is 1
 }
 
-void unlock_flash_nscr(void) {
-
-	if (FLASH->NSCR & (1U << 31)) {
-		USART1_WriteString("Locked\n");
-	}
+int unlock_flash_nscr(void) {
 
 	//wait for the BSY bit in FLASH_NSSR register to clear in order to start writing to it
 	while ((FLASH->NSSR) & (1U << 16)) {}
@@ -38,25 +33,31 @@ void unlock_flash_nscr(void) {
 
 	//if unlocked, print unlocked
 	if (((FLASH->NSCR) & (1U << 31)) == 0) { //lock bit is clear
-		USART1_WriteString("Unlocked\n");
+		return 0; //unlocked
+	}
+	else {
+		return 1; //still locked
 	}
 
 	//Now we can write to the memory
 
 }
 
-void lock_flash_nscr(void) {
+int lock_flash_nscr(void) {
 	//Lock the FLASH control register FLASH_NSCR
 	FLASH->NSCR |= (1U << 31); //set the 31st bit in order to LOCK the flash register
 
 	//check if it is locked using uart print
 	if (FLASH->NSCR & (1U << 31)) {
-		USART1_WriteString("Locked\n");
+		return 0; //locked
+	}
+	else {
+		return 1; //unlocked still
 	}
 
 }
 
-void page_erase(const Descriptor *Slot) {
+int page_erase(const Descriptor *Slot) {
 	//check that no flash memory operation is ongoing by checking the BSY bit
 	while ((FLASH->NSSR) & (1U << 16)) {}
 
@@ -93,7 +94,7 @@ void page_erase(const Descriptor *Slot) {
 
 	//check if the erase was successful
 	if (FLASH->NSSR & 0x20FB) {
-		USART1_WriteString("ERASE FAIL (ERROR RAISED)\n");
+		return 1; //erase failed due to error being raised
 	}
 
 	//invalidate the ICACHE before reading
@@ -110,14 +111,14 @@ void page_erase(const Descriptor *Slot) {
 		}
 	}
 	if (fail == 0) {
-		USART1_WriteString("ERASE SUCCESSFUL\n");
+		return 0; //erase successful
 	}
 	else {
-		USART1_WriteString("ERASE FAIL\n");
+		return 1; //erase failed
 	}
 }
 
-void write_flash(uint32_t quad_word[4], uint32_t *address) {
+int write_flash(uint32_t quad_word[4], uint32_t *address) {
 
 	//set EOPIE bit in FLASH_NSCR to enable interrupt
 	FLASH->NSCR |= (1U << 24);
@@ -131,7 +132,7 @@ void write_flash(uint32_t quad_word[4], uint32_t *address) {
 	//check and clear all error programming flags due to a previous programming
 	FLASH->NSSR = 0x20FB; //this register operates on a rw_cl system where writing a 1 clears the bit. So, a hex number is used which keeps the remaining bits 0 and writes 1 to the error bits which clears them
 	if ((FLASH->NSSR) & (1U << 7)) { //if PGSERR is set, it means we have not cleared it properly
-		while(1) {} //a sort of breakpoint if anything goes wrong
+		return 0; //a sort of breakpoint if anything goes wrong
 	}
 
 	//Set PG
@@ -161,27 +162,16 @@ void write_flash(uint32_t quad_word[4], uint32_t *address) {
 	FLASH->NSCR &= ~(1U << 0); //clear bit 0 to disable FLASH programming
 
 	if (FLASH->NSSR & 0x20FB) {
-		USART1_WriteString("WRITE FAIL (ERROR RAISED)\n");
 		if (FLASH->NSSR & (1U << 5)) {
-			USART1_WriteString("PGAERR raised\n");
+			return PGAERR;
 		}
 		if (FLASH->NSSR & (1U << 3)) {
-			USART1_WriteString("PROGERR raised\n");
+			return PROGERR;
 		}
 	}
 
 	//invalidate ICACHE
 	invalidate_icache();
-
-	char string[10];
-
-	//verify if the write was a success
-	for (volatile uint32_t i = 0; i < 4; i++) {
-		int_to_str(function_address[i], string);
-		USART1_WriteString(string);
-		USART1_WriteString("\n");
-	}
-	USART1_WriteString("\n");
 
 	//do a pass/fail verification
 	int fail = 0;
@@ -192,10 +182,10 @@ void write_flash(uint32_t quad_word[4], uint32_t *address) {
 		}
 	}
 	if (fail == 0) {
-		USART1_WriteString("WRITE SUCCESSFUL\n");
+		return 0; //write successful
 	}
 	else {
-		USART1_WriteString("WRITE FAIL\n");
+		return 1; //write fail
 	}
 
 }

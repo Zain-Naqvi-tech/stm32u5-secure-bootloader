@@ -10,16 +10,19 @@
 
 #include <stdint.h>
 
+#define PGAERR 5
+#define PROGERR 3
+
 typedef struct {
 	uint32_t size;
 	uint32_t start;
 	uint32_t bank;
 } Descriptor;
 
-void unlock_flash_nscr(void);
-void lock_flash_nscr(void);
-void page_erase(const Descriptor *Slot);
-void write_flash(uint32_t quad_word[4], uint32_t *address);
+int unlock_flash_nscr(void);
+int lock_flash_nscr(void);
+int page_erase(const Descriptor *Slot);
+int write_flash(uint32_t quad_word[4], uint32_t *address);
 void invalidate_icache(void);
 
 extern const Descriptor SlotA;

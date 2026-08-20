@@ -35,6 +35,7 @@
 #endif
 
 typedef void (*jump_function)(void);
+int result;
 
 int main(void)
 {
@@ -45,13 +46,23 @@ int main(void)
 
 	//Start the hand-off
 
+	result = 0;
+
 	ICACHE->CR |= (1U << 0); //enable ICACHE
 
 	USART1_WriteString("Going into the unlock-lock test\n");
 
-	unlock_flash_nscr();
+	result = unlock_flash_nscr();
+	if (result) {
+		USART1_WriteString("Unlock Fail\n");
+		return -1; //main() failure
+	}
 
-	page_erase(&SlotMetadata);
+	result = page_erase(&SlotMetadata);
+	if (result) {
+		USART1_WriteString("Erase Failed\n");
+		return -1; //main() failure
+	}
 
 	//TEST REGION
 
@@ -61,7 +72,19 @@ int main(void)
 
     MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
 
-	write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+	result = write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+	if (result == PGAERR) {
+		USART1_WriteString("PGAERR Raised\n");
+		return -1;
+	}
+	if (result == PROGERR) {
+		USART1_WriteString("PROGERR Raised\n");
+		return -1;
+	}
+	if (result) {
+		USART1_WriteString("Write Fail\n");
+		return -1;
+	}
 
 	address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
 
@@ -69,7 +92,19 @@ int main(void)
 
     MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
 
-	write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+	result = write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+	if (result == PGAERR) {
+		USART1_WriteString("PGAERR Raised\n");
+		return -1;
+	}
+	if (result == PROGERR) {
+		USART1_WriteString("PROGERR Raised\n");
+		return -1;
+	}
+	if (result) {
+		USART1_WriteString("Write Fail\n");
+		return -1;
+	}
 
 	//TEST REGION
 
