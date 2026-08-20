@@ -12,9 +12,9 @@
 #include "flash.h"
 #include "CRC.h"
 
-const Descriptor SlotA = {.size = 992, .start = 0x08008000, .bank = 1};
-const Descriptor SlotB = {.size = 992, .start = 0x08108000, .bank = 2};
-const Descriptor SlotMetadata = {.size = 32, .start = 0x08100000, .bank = 2};
+const Descriptor SlotA = {.size = 1015808, .start = 0x08008000, .bank = 1};
+const Descriptor SlotB = {.size = 1015808, .start = 0x08108000, .bank = 2};
+const Descriptor SlotMetadata = {.size = 32,768, .start = 0x08100000, .bank = 2};
 
 void invalidate_icache(void) {
 	//invalidate the ICACHE BEFORE reading in order to ensure we do not read a cached value
