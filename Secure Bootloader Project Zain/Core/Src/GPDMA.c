@@ -9,7 +9,7 @@
 #include "GPDMA.h"
 #include "stm32u585xx.h"
 
-void GPDMA_Direct_Programming(void) {
+void GPDMA_Direct_Programming(uint32_t address) {
 
 	//initialize DMA channel
 
@@ -23,7 +23,7 @@ void GPDMA_Direct_Programming(void) {
 	GPDMA1->PRIVCFGR |= (1U << 0); //set bit 0 to make it privileged (channel 0)
 
 	//pick the source using the source address register
-	GPDMA1_Channel0->CSAR = 0x08000000;
+	GPDMA1_Channel0->CSAR = address; //we are using the passed in parameter for the address (source)
 
 	//pick the destination using the destination address register
 	GPDMA1_Channel0->CDAR = 0x420C0404; //source address + offset
@@ -40,7 +40,7 @@ void GPDMA_Direct_Programming(void) {
 	GPDMA1_Channel0->CTR1 |= (1U << 3); //set bit 3 for contiguously incremented burst
 
 	//disable destination incrementing
-	GPDMA1_Channel0->CTR1 |= (1U << 19); //set bit 19 for contiguously incremented burst
+	GPDMA1_Channel0->CTR1 &= ~(1U << 19); //set bit 19 for contiguously incremented burst
 
 	//set Transfer Complete Event Mode to 00
 	GPDMA1_Channel0->CTR2 &= ~(0x3U << 30); //clear bits 30 and 31 to make transfer complete mode at block level (once the block is transmitted)

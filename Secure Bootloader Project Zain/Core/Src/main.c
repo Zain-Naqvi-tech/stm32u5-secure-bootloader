@@ -26,6 +26,8 @@
 #include "flash.h"
 #include "myMetadata.h"
 #include "CRC.h"
+#include "GPDMA.h"
+#include "hash.h"
 
 #define APP_START_ADDRESS 0x08008000 //defines the location of where the application starts (start of slot A)
 #define FLASH_TEST_ADDRESS 0x08108000 //defines the location of where the bit aligned quad word will live
@@ -37,12 +39,16 @@
 typedef void (*jump_function)(void);
 int result;
 
+const uint8_t abcd[] = {0x61,0x62,0x63,0x64};
+
 int main(void)
 {
 	//PortH_Init();
 	PLL_Init();
 	USART1_Init();
 	CRC_Init();
+	HASH_Init();
+	
 
 	//Start the hand-off
 
@@ -64,49 +70,51 @@ int main(void)
 		return -1; //main() failure
 	}
 
-	//TEST REGION
+	//TEST REGION --------------
 
-	uint32_t quadWord[4] = {0,0,0,0}; //placeholder start for the quad-word to be written to memory
+	// uint32_t quadWord[4] = {0,0,0,0}; //placeholder start for the quad-word to be written to memory
 
-	uint32_t *address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
+	// uint32_t *address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
 
-    MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
+    // MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
 
-	result = write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
-	if (result == PGAERR) {
-		USART1_WriteString("PGAERR Raised\n");
-		return -1;
-	}
-	if (result == PROGERR) {
-		USART1_WriteString("PROGERR Raised\n");
-		return -1;
-	}
-	if (result) {
-		USART1_WriteString("Write Fail\n");
-		return -1;
-	}
+	// result = write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+	// if (result == PGAERR) {
+	// 	USART1_WriteString("PGAERR Raised\n");
+	// 	return -1;
+	// }
+	// if (result == PROGERR) {
+	// 	USART1_WriteString("PROGERR Raised\n");
+	// 	return -1;
+	// }
+	// if (result) {
+	// 	USART1_WriteString("Write Fail\n");
+	// 	return -1;
+	// }
 
-	address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
+	// address = MetaData_Latest_Entry(&MD, &SlotMetadata); //this returns the address of WHERE to write the new quad_word and fills the MD struct with the latest information
 
-	MetaData_Update_Fields(&MD, 2);
+	// MetaData_Update_Fields(&MD, 2);
 
-    MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
+    // MetaData_QuadWord(&MD, quadWord); //place the information from the Metadata struct into a quad-word
 
-	result = write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
-	if (result == PGAERR) {
-		USART1_WriteString("PGAERR Raised\n");
-		return -1;
-	}
-	if (result == PROGERR) {
-		USART1_WriteString("PROGERR Raised\n");
-		return -1;
-	}
-	if (result) {
-		USART1_WriteString("Write Fail\n");
-		return -1;
-	}
+	// result = write_flash(quadWord, address); //write data to flash using an address pointer and the data to be written is stored in the quadWord being passed in
+	// if (result == PGAERR) {
+	// 	USART1_WriteString("PGAERR Raised\n");
+	// 	return -1;
+	// }
+	// if (result == PROGERR) {
+	// 	USART1_WriteString("PROGERR Raised\n");
+	// 	return -1;
+	// }
+	// if (result) {
+	// 	USART1_WriteString("Write Fail\n");
+	// 	return -1;
+	// }
 
-	//TEST REGION
+	//TEST REGION --------------
+
+	GPDMA_Direct_Programming((uint32_t)abcd);
 
 	lock_flash_nscr();
 
