@@ -8,6 +8,8 @@
 #ifndef GPDMA_H_
 #define GPDMA_H_
 
+#include <stdint.h>
+
 void GPDMA_Direct_Programming(uint32_t address);
 
 #endif /* GPDMA_H_ */

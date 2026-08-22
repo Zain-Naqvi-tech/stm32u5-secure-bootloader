@@ -66,10 +66,10 @@ void GPDMA_Direct_Programming(uint32_t address) {
 	GPDMA1_Channel0->CCR |= (1U << 10); //data transfer error interrupt enable on bit 10 being set
 
 	//set priority of the interrupt in the NVIC
-	NVIC_SetPriority(GPDMA1_CH0_IRQHandler, 1); //priority 1 (does not really matter in our case but we must assign it a value)
+	NVIC_SetPriority(GPDMA1_Channel0_IRQn, 1); //priority 1 (does not really matter in our case but we must assign it a value)
 
 	//Enable the interrupt request in the NVIC
-	NVIC_EnableIRQ(GPDMA1_CH0_IRQHandler); //enable the Channel 0 GPDMA interrupt request handler
+	NVIC_EnableIRQ(GPDMA1_Channel0_IRQn); //enable the Channel 0 GPDMA interrupt request handler
 
 	//enable DMA channel
 	GPDMA1_Channel0->CCR |= (1U << 0); //set bit 0 of GPDMA_CxCR to enable dma channel

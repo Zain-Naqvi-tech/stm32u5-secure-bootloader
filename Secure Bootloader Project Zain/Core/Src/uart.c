@@ -96,6 +96,7 @@ void int_to_str(uint32_t n, char str[]) {
 	if (n == 0) {
 		str[0] = '0';
 		str[1] = '\0';
+		return;
 	}
 
 	if (n < 0) {

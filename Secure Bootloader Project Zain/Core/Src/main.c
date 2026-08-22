@@ -63,6 +63,7 @@ void GPDMA1_CH0_IRQHandler(void) {
 
 int main(void)
 {
+
 	//PortH_Init();
 	PLL_Init();
 	USART1_Init();
@@ -144,8 +145,16 @@ int main(void)
 
 	//the flag is now 1 so we proceed by extracting the hashing information
 	while (HASH->SR & (1U << 3)) {} //while the BUSY bit is 1, the hash core is processing the block of data, so we wait
+	while (!(HASH->SR & (1U << 1))) {} //while the DCIS bit is cleared, there is no digest available in the HASH_HRx registers
 	
 	//Getting here means that the data has been processed and now we can work on extracting that information from the HASH registers
+	char hash_string[11];
+	uint32_t index;
+	for (index = 0; index < 8; index++) {
+		int_to_str(HASH_DIGEST->HR[index], hash_string);
+		USART1_WriteString(hash_string);
+		USART1_WriteString("\n");
+	}
 
 	lock_flash_nscr();
 
