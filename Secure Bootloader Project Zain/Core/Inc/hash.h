@@ -8,6 +8,8 @@
 #ifndef HASH_H_
 #define HASH_H_
 
-void HASH_Init(void);
+#include <stdint.h>
+
+void HASH_Init(uint32_t size);
 
 #endif /* HASH_H_ */

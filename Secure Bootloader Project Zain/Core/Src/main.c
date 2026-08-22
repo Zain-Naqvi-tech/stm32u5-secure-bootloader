@@ -40,7 +40,7 @@ typedef void (*jump_function)(void);
 int result;
 volatile uint8_t gpdma_completion_flag = 0; //when this turns 1, we read the HASH digest
 
-const uint8_t abcd[] = {0x61,0x62,0x63,0x64};
+const uint8_t abcd[] = {0x61,0x62,0x63,0x64,0x65};
 
 //Interrupt Service Routine (This will be responsible for handling the DMA completion and HASH digest reading)
 void GPDMA1_CH0_IRQHandler(void) {
@@ -70,7 +70,7 @@ int main(void)
 	CRC_Init();
 
 	//Initialize the HASH peripheral and enable the DMA for it
-	HASH_Init();
+	HASH_Init(5);
 	
 
 	//Start the hand-off
@@ -138,7 +138,7 @@ int main(void)
 	//TEST REGION --------------
 
 	//This function will use the GPDMA to move the 4 bytes of data from the abcd array to the address where HASH_DIN is
-	GPDMA_Direct_Programming((uint32_t)abcd);
+	GPDMA_Direct_Programming((uint32_t)abcd, 5);
 
 	//Read from HASH
 	while (gpdma_completion_flag == 0) {}

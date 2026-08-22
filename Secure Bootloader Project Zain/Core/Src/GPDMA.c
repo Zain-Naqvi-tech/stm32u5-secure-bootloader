@@ -9,7 +9,7 @@
 #include "GPDMA.h"
 #include "stm32u585xx.h"
 
-void GPDMA_Direct_Programming(uint32_t address) {
+void GPDMA_Direct_Programming(uint32_t address, uint32_t size) { //it takes in the address of the Data being transferred and the Data Size (in bytes)
 
 	//initialize DMA channel
 
@@ -54,8 +54,8 @@ void GPDMA_Direct_Programming(uint32_t address) {
 	//set the REQSEL value to 89 for hash_in_dma
 	GPDMA1_Channel0->CTR2 |= (89U << 0); //set the value to 89
 
-	//use the block register to write the number of bytes to transfer from the source
-	GPDMA1_Channel0->CBR1 |= (4U << 0); //set bits 0-15 to the number 4 to indicate that we are moving 4 bytes (32 bits) of data
+	//use the block register to write the number of bytes to transfer from the source (must be rounded up) (BNDT)
+	GPDMA1_Channel0->CBR1 |= (((size + 3) & ~3) << 0); //set bits 0-15 to the number 'size' to indicate that we are moving 'size' bytes of data
 
 	//Interrupt Enable and IRQ setup
 
