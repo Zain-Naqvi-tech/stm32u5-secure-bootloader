@@ -28,6 +28,7 @@
 #include "CRC.h"
 #include "GPDMA.h"
 #include "hash.h"
+#include "DWT.h"
 
 #define APP_START_ADDRESS 0x08008000 //defines the location of where the application starts (start of slot A)
 #define FLASH_TEST_ADDRESS 0x08108000 //defines the location of where the bit aligned quad word will live
@@ -68,10 +69,12 @@ int main(void)
 	PLL_Init();
 	USART1_Init();
 	CRC_Init();
+	DWT_Init();
 
 	//Initialize the HASH peripheral and enable the DMA for it
 	HASH_Init(5);
 	
+
 
 	//Start the hand-off
 
@@ -138,6 +141,7 @@ int main(void)
 	//TEST REGION --------------
 
 	//This function will use the GPDMA to move the 4 bytes of data from the abcd array to the address where HASH_DIN is
+	uint32_t startTime = DWT->CYCCNT; //get the start time
 	GPDMA_Direct_Programming((uint32_t)abcd, 5);
 
 	//Read from HASH
@@ -147,6 +151,8 @@ int main(void)
 	while (HASH->SR & (1U << 3)) {} //while the BUSY bit is 1, the hash core is processing the block of data, so we wait
 	while (!(HASH->SR & (1U << 1))) {} //while the DCIS bit is cleared, there is no digest available in the HASH_HRx registers
 	
+	uint32_t endTime = DWT->CYCCNT; //get the end time
+
 	//Getting here means that the data has been processed and now we can work on extracting that information from the HASH registers
 	char hash_string[11];
 	uint32_t index;
@@ -155,6 +161,11 @@ int main(void)
 		USART1_WriteString(hash_string);
 		USART1_WriteString("\n");
 	}
+
+	uint32_t delta = endTime - startTime;
+	char deltaPrint[20];
+	int_to_str(delta, deltaPrint);
+	USART1_WriteString(deltaPrint);
 
 	lock_flash_nscr();
 
