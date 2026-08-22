@@ -29,11 +29,11 @@ void GPDMA_Direct_Programming(uint32_t address) {
 	GPDMA1_Channel0->CDAR = 0x420C0404; //source address + offset
 
 	//work on the channel x transfer register
-	GPDMA1_Channel0->CTR1 &= ~(0x02U << 0);
+	GPDMA1_Channel0->CTR1 &= ~(0x03U << 0);
 	GPDMA1_Channel0->CTR1 |= (0x02U << 0); //set bits 0 and 1 to 10 to make it 4-byte data width for source address (32-bits)
 
 	//work on the channel x transfer register
-	GPDMA1_Channel0->CTR1 &= ~(0x02 << 16);
+	GPDMA1_Channel0->CTR1 &= ~(0x03 << 16);
 	GPDMA1_Channel0->CTR1 |= (0x02 << 16); //set bits 0 and 1 to 10 to make it 4-byte data width for destination address
 
 	//enable source incrementing
@@ -57,11 +57,19 @@ void GPDMA_Direct_Programming(uint32_t address) {
 	//use the block register to write the number of bytes to transfer from the source
 	GPDMA1_Channel0->CBR1 |= (4U << 0); //set bits 0-15 to the number 4 to indicate that we are moving 4 bytes (32 bits) of data
 
+	//Interrupt Enable and IRQ setup
+
 	//enable a 'transfer complete' interrupt
 	GPDMA1_Channel0->CCR |= (1U << 8); //set bit 8 to enable an interrupt which signals the system that the transfer is DONE
 
 	//enable an error interrupt
 	GPDMA1_Channel0->CCR |= (1U << 10); //data transfer error interrupt enable on bit 10 being set
+
+	//set priority of the interrupt in the NVIC
+	NVIC_SetPriority(GPDMA1_CH0_IRQHandler, 1); //priority 1 (does not really matter in our case but we must assign it a value)
+
+	//Enable the interrupt request in the NVIC
+	NVIC_EnableIRQ(GPDMA1_CH0_IRQHandler); //enable the Channel 0 GPDMA interrupt request handler
 
 	//enable DMA channel
 	GPDMA1_Channel0->CCR |= (1U << 0); //set bit 0 of GPDMA_CxCR to enable dma channel

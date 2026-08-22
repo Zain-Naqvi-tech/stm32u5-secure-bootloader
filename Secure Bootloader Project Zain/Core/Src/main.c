@@ -38,8 +38,28 @@
 
 typedef void (*jump_function)(void);
 int result;
+volatile uint8_t gpdma_completion_flag = 0; //when this turns 1, we read the HASH digest
 
 const uint8_t abcd[] = {0x61,0x62,0x63,0x64};
+
+//Interrupt Service Routine (This will be responsible for handling the DMA completion and HASH digest reading)
+void GPDMA1_CH0_IRQHandler(void) {
+
+	//first, clear the hardware flag which raised the interrupt
+	if (GPDMA1_Channel0->CSR & (1U << 8)) { //TCF is raised for completion
+		GPDMA1_Channel0->CFCR |= (1U << 8); //set bit 8 to clear the TCF interrupt flag
+		gpdma_completion_flag = 1; //set the flag to 1
+	}
+
+	if (GPDMA1_Channel0->CSR & (1U << 10)) { //DTEF is raised for error
+		GPDMA1_Channel0->CFCR |= (1U << 10); //set bit 10 to clear the data transfer ERROR flag
+
+		while(1) {} //infinite loop in case of error
+
+	}
+
+
+}
 
 int main(void)
 {
@@ -47,6 +67,8 @@ int main(void)
 	PLL_Init();
 	USART1_Init();
 	CRC_Init();
+
+	//Initialize the HASH peripheral and enable the DMA for it
 	HASH_Init();
 	
 
@@ -64,11 +86,11 @@ int main(void)
 		return -1; //main() failure
 	}
 
-	result = page_erase(&SlotMetadata);
-	if (result) {
-		USART1_WriteString("Erase Failed\n");
-		return -1; //main() failure
-	}
+	// result = page_erase(&SlotMetadata);
+	// if (result) {
+	// 	USART1_WriteString("Erase Failed\n");
+	// 	return -1; //main() failure
+	// }
 
 	//TEST REGION --------------
 
@@ -114,7 +136,16 @@ int main(void)
 
 	//TEST REGION --------------
 
+	//This function will use the GPDMA to move the 4 bytes of data from the abcd array to the address where HASH_DIN is
 	GPDMA_Direct_Programming((uint32_t)abcd);
+
+	//Read from HASH
+	while (gpdma_completion_flag == 0) {}
+
+	//the flag is now 1 so we proceed by extracting the hashing information
+	while (HASH->SR & (1U << 3)) {} //while the BUSY bit is 1, the hash core is processing the block of data, so we wait
+	
+	//Getting here means that the data has been processed and now we can work on extracting that information from the HASH registers
 
 	lock_flash_nscr();
 
