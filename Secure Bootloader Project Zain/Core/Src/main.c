@@ -166,6 +166,7 @@ int main(void)
 	char deltaPrint[20];
 	int_to_str(delta, deltaPrint);
 	USART1_WriteString(deltaPrint);
+	USART1_WriteString("\n");
 
 	lock_flash_nscr();
 
