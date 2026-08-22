@@ -614,3 +614,146 @@ Basic sequence is: Find newest by looping like that -> query reads the fields an
 - Ok im dropping the Query function, no need for it if we are getting the struct anyways. Ok the write() function will now take an address and not these slot things.
 
 Ok lets do some calculation. 0x0810_0000 + 16 bytes = 0x0810_0000 + 0x0000_0010 = 0x0810_0010 which is the new address to append to or go to and check :)
+
+## Phase 2: Hardware SHA-256 Fed by GPDMA
+
+### Choosing the hash algorithm
+
+Notes on the HASH peripheral:
+- It is an implementation of the secure hash algorithm (SHA-1, SHA2-224, SHA2-256), the MD5 hash algorithm and the HMAC algorithm. HMAC is suitable for applications requiring message authentication.
+- Processor computes FIPS (Federal Information Processing Standards) approved digest lengths of 160, 224, 256 bits, for messages up to (2^64 - 1) bits.
+- Computes 128-bit digests for the MD5 algorithm.
+- Refer to section 51.2 for technical features. The main things are:
+  - 82 clock cycles for SHA-1.
+  - 66 clock cycles for SHA2-256.
+  - Automatic padding to complete the input bit string to fit digest minimum block size of 512 bits (16*32).
+  - Single or fixed DMA burst transfers of four words.
+
+Block Diagram:
+
+![RM Figure 501, HASH block diagram](image-13.png)
+
+About secure hash algorithms:
+- The HASH computes a condensed representation of a message.
+- Length < 2^64 on input means the HASH produces a fixed length output string called a message digest:
+  - MD5: 128-bit.
+  - SHA-1: 160-bit.
+  - SHA2-224 and SHA2-256: 224 bits and 256 bits respectively.
+- Key sentence: the message digest can then be processed with a digital signature algorithm in order to generate or verify the signature for the message.
+- Signing the message 'digest' is more efficient because the digest is smaller than the actual message. The verifier must use the same algorithm as that of the creator of the digital signature.
+- Data are entered into the HASH one 32-bit word at a time, by writing them into the HASH_DIN register.
+- Refer to 51.4.4 for more info on FIFO and data feeding.
+- Refer to 51.4.5 for Message Digest Computing. Gives full steps on how to SET it up and COMPUTE the message digest.
+
+Comparing the algorithms:
+- Ok so on some research, I found that SHA2-256 and SHA2-224 are the latest ones (early 2000s). So let's decide between the two (they both have a larger digest size as well).
+- Same word size, sha1 takes more rounds of operations (more cycles).
+- Both SHA2s have collision resistance which md5 and sha-1 don't.
+- However, both SHA-1 and MD5 are FASTER than the other two IN TERMS OF RELATIVE SPEED (1MB block).
+- Ok from this, at least I know it is either between the MD5 and the SHA2-256. 224 is an add on to the 256 and really similar, but online search shows it not being used in industry (ai answer on google, take it as a grain of salt).
+- So SHA2-256 is MORE secure due to more collision resistance. It would take 2^128 operations to find a collision.
+- MD5 is exceptionally fast based on online benchmarking. However, with hardware acceleration, the sha256 can be boosted as well.
+
+Final Decision: Using SHA2-256.
+
+A little overview on hashing:
+- Mathematical function that converts any input data, like a text string, file or password, into a unique fixed length string of characters.
+
+### HASH bring-up
+
+- Now onto the HASH bring-up. Let's make a file and Initialise it.
+- Enable clock in RCC_AHB2ENR1 (bit 17 set).
+- The rest of the steps come from the RM, select the algo and stuff (refer to section 51.4.5).
+- Ok so the issue with the HASH being big-endian and our work being small-endian can be fixed by using the DATATYPE field in the CR register of HASH. So, choosing the 8-bit data (half word swapping) in those fields, it will automatically swap the entire word for us on the fly.
+- Don't see a need for HMAC, it is the Hash-Based Message Authentication Code. We are using the basic one.
+- NBLW exists to handle messages that end on a non-word boundary. That means if the message length is not a perfect multiple of 4 bytes then we use NBLW.
+- Set both INIT and DMAE bits to 1 to enable initialise HASH and enable the DMA communication (great place to use DMA again after the driver work last project).
+
+### Receiving and processing the data
+
+Ok now I need to figure out how to receive and process the data and save the OUTPUT. I have already done the other work. Python's hashlib prints out a big number ive saved. The input is a 4-byte string 'abcd' without the null terminator, so 0x61, 0x62, 0x63, 0x64.
+
+The RM has an option for my case I think. When data are filled by DMA as a single transfer:
+- Partial digest computations are triggered automatically each time the FIFO is full. The final digest computation is triggered automatically when the last block has been transferred to the HASH_DIN register (DCAL bit is set to 1 by hardware).
+- So yeah we need to ensure that this is functional (MDMAT bit = 0).
+- An intermediate digest calculation is launched automatically if the DMA is used.
+- DCIS = 1 is set by hardware when a digest becomes ready. The digest can be accessed using HASH digest registers.
+
+### Setting up the DMA (chapter 17, GPDMA)
+
+Ok I need to set up dma now, chapter 17. GPDMA. It is a memory to peripheral transfer.
+
+This map shows the way DMA is set up for memory transfer. So basically in broader terms, I set up the DMA function which takes in the data to be transferred and write all this out from figure 52. This will send it OUT. Then READ from HASH. Remember to see how to set up source and destination.
+- Ok so there is a SOURCE address register called GPDMA_CxSAR.
+- Destination address register called GPDMA_CxDAR.
+- Ok let's start following the flowchart and figure out which registers to use.
+
+![GPDMA registers (section 17.8)](image-14.png)
+
+![Figure 52. GPDMA channel direct programming without linked-list (GPDMA_CxLLR = 0)](image-15.png)
+
+Ok so initialization steps arent given, but from what we want to do, we need to set the source and the destination. Definitely work with an interrupt based result so we can handle it in an IRQ, and let's see where that takes us, trying to create a flow here.
+
+Ok so these register definitions talk about s/ns and privileged, non-privileged stuff so I assume I need to set up those first for our channel 0. Oh yeah im using channel 0 because channels 0-11 are normal and the rest are advanced. Channel 0 is sufficient.
+
+Sequence:
+- Enable peripheral clock.
+- Make it non-secure.
+- Make it privileged.
+- Configure the source address.
+- Configure the destination address (physical address of the HASH_DIN data input register). It has offset 0x04 and HASH base address is 0x420C_0400 so the final address is 0x420C_0404.
+- Set the source and destination data widths. Both 32-bits.
+- Ok now these points I didn't know, had to search them up to realize they exist: Enable Source incrementing so the DMA moves through the Flash sequential bytes. Disable Destination Incrementing because HASH_DIN register does not change its address.
+- Set the Source and Destination Security (no need since we're making it non-secure anyways).
+- Request selection for hash_in_dma by using 89 (table 137).
+- Swreq must be 0.
+- Enable DREQ.
+- Set Transfer Complete Event Mode (TCEM) to 00.
+- Use the block register to write the number of bytes to transfer from the source.
+
+Reading the result:
+- SHA2-256 is returned from HASH_HR0 to HASH_HR7 registers.
+- Ok now in order to actually catch the DMA transfer and the final digest, we need to come up with a plan to read it.
+- The best option is to use the interrupt that comes with the DMA. As soon as that is raised, we know that the DMA transfer is complete, which results in the HASH register now doing its work.
+- So, in the IRQ, we need to check the HASH register, wait until it is clear and it has completed its calculations, and then right away read from the 8 HASH_HR registers (each register is 4 bytes which makes the total 32 bytes).
+- Ok remember that the NVIC functions take in the IRQn and not the straight up IRQ function.
+
+### Result
+
+Ok output done. These are the numbers coming out of the digest:
+
+```
+2295604847
+3571856269
+330843644
+4069087133
+547129720
+599335293
+2749456787
+1862473097
+```
+
+Comparing these to the actual output of the hashlib function on 'abcd', we are CORRECT and SUCCESSFUL. YAY.
+
+### Breaking the happy path: non-aligned data
+
+So, we were able to prove the happy path, now time to break this. Let's get some systems in place which deal with non-aligned, less than 4 bytes data words.
+
+Ok so for non-alignment, we need to check the NBLW bitfield in the HASH_STR register, and the BR1 and TR1 registers in GPDMA. Ill look into these and fix the non-alignment to finish off today's work.
+
+NBLW: number of valid bits in the last word.
+
+Ok working on CBR1, BNDT bits 0-15. Now the thing is, ive hardcoded it to 4. If we need 5, this goes to 5. The only thing going INTO the function is the address which does not give any information on the size. SO, i need to add a size parameter to the function as well. That solved BNDT.
+
+Now onto the NBLW: ok so before figuring out WHERE to place it, we need to figure out what to do with it. Valid bits in last word is important, we must not have trailing zeros or junk or 0xFFs. So basically how many bits of the final word count, the one which could make the message misaligned. NOW HOW WOULD WE KNOW THIS. Ohhh my bad, we have the size now, we can use it. Let's do (size%4) * 8 = the LAST valid BITS for NBLW.
+
+Ok let's implement this and see where it goes:
+- First, let's add size to both functions.
+- Now, we need to add the size number to the BNDT. Even if the size is different, the register will take multiples of 4. So, we need to round up to nearest multiple of 4.
+- We add 3 to the number, and clear the last two bits to round down.
+- So let's say the size is 10. 10+3=13, 13=1101, 1101 & 1100 = 1100 which is 12. So all good on this end.
+
+![RealTerm Result for 'abcde'](image-16.png)
+
+It matches the output from the python function hashlib.sha256(b'abcde'), hexdigest()
+So we are good on this end.
